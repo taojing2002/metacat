@@ -25,9 +25,16 @@
     <import resource="application-context-dryad31.xml" />
     
     <import resource="application-context-resource-map.xml" />
-    <import resource="application-context-systemmeta100.xml" />
+    <import resource="application-context-systemmeta200.xml" />
     
-    <import resource="application-context-annotation.xml" />
+     
+    <import resource="application-context-oa.xml" />
+    <import resource="application-context-annotator.xml" />    
+    
+    <import resource="application-context-delete-subprocessors.xml" />    
+    
+    <import resource="application-context-dc-base.xml" />
+    <import resource="application-context-dcx.xml" />
 
  <bean id="dateConverter" class="org.dataone.cn.indexer.convert.SolrDateConverter" />
  <bean id="fgdcDateConverter" class="org.dataone.cn.indexer.convert.FgdcDateConverter"/>
@@ -79,7 +86,7 @@
    <list>
     <bean class="edu.ucsb.nceas.metacat.index.SolrIndex">
      <constructor-arg name="xmlNamespaceConfig" ref="xmlNamespaceConfig" />
-     <constructor-arg name="sysmetaSolrFields" ref="xpath_system_metadata_100"/>
+     <constructor-arg name="sysmetaSolrFields" ref="xpath_system_metadata_200"/>
      <!--<property name="solrBaseUri" value="${solr.base.uri}" />
      <property name="httpService" ref="httpService" /> -->
      <property name="subprocessors">
@@ -96,6 +103,13 @@
        <ref bean="dryad30Subprocessor" />
        <ref bean="dryad31Subprocessor" />
        <ref bean="rdfXmlSubprocessor" />
+       <!--  <ref bean="annotatorSubprocessor" /> -->
+       <ref bean="dublinCoreExtendedSubprocessor" />
+      </list>
+     </property>
+     <property name="deleteSubprocessors">
+      <list>
+       <ref bean="annotationDeleteSubprocessor" />
       </list>
      </property>
     </bean>
@@ -109,8 +123,8 @@
     
     <bean class="org.dataone.cn.indexer.XMLNamespace">
      <constructor-arg name="namespace"
-      value="http://ns.dataone.org/service/types/v1" />
-     <constructor-arg name="prefix" value="d100" />
+      value="http://ns.dataone.org/service/types/v2.0" />
+     <constructor-arg name="prefix" value="d200" />
     </bean>
     <bean class="org.dataone.cn.indexer.XMLNamespace">
      <constructor-arg name="namespace"
@@ -179,6 +193,11 @@
     	<constructor-arg name="prefix" value="dryad" />
     	<constructor-arg name="namespace" value="http://purl.org/dryad/terms/" />
     </bean>   
+    
+    <bean class="org.dataone.cn.indexer.XMLNamespace">
+    	<constructor-arg name="prefix" value="xsi" />
+    	<constructor-arg name="namespace" value="http://www.w3.org/2001/XMLSchema-instance" />
+    </bean>     
     
    </list>
   </constructor-arg>

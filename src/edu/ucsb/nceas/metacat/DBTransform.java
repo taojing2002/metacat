@@ -353,7 +353,7 @@ public class DBTransform {
     }
     
     //Check if the systemId is relative path, add a postfix - the contextULR to systemID. 
-    if (systemId != null && systemId.indexOf("http://" ) == -1)
+    if (systemId != null && !systemId.startsWith("http"))
     {
     	systemId = contextURL+systemId;
     }

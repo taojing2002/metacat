@@ -81,27 +81,14 @@
              </xsl:if>
              <!-- put in the identifier and system that the ID belongs to -->
              <xsl:if test="../@packageId">
-             <xsl:for-each select="../@packageId">
-             	<xsl:choose>
-             		<xsl:when test="$docid != ''" >
-             			<!-- use docid parameter when we have it -->         	
-						<xsl:call-template name="identifier">
-							<xsl:with-param name="packageID" select="$docid"/>
-							<xsl:with-param name="system" select="../@system"/>
-							<xsl:with-param name="IDfirstColStyle" select="$firstColStyle"/>
-							<xsl:with-param name="IDsecondColStyle" select="$secondColStyle"/>
-						</xsl:call-template>
-		             </xsl:when>
-		             <xsl:otherwise>
-		             	<xsl:call-template name="identifier">
-			               <xsl:with-param name="packageID" select="../@packageId"/>
-			               <xsl:with-param name="system" select="../@system"/>
-			               <xsl:with-param name="IDfirstColStyle" select="$firstColStyle"/>
-			               <xsl:with-param name="IDsecondColStyle" select="$secondColStyle"/>
-			             </xsl:call-template>
-		             </xsl:otherwise>
-	             </xsl:choose>
-             </xsl:for-each>
+	             <xsl:for-each select="../@packageId">
+	             	<xsl:call-template name="identifier">
+		               <xsl:with-param name="packageID" select="../@packageId"/>
+		               <xsl:with-param name="system" select="../@system"/>
+		               <xsl:with-param name="IDfirstColStyle" select="$firstColStyle"/>
+		               <xsl:with-param name="IDsecondColStyle" select="$secondColStyle"/>
+		             </xsl:call-template>
+	             </xsl:for-each>
              </xsl:if>
              <!-- put in the alternate identifiers -->
              <xsl:if test="keywordSet">
@@ -197,10 +184,22 @@
          	</label>
          	<div class="controls controls-well">
 		         <xsl:for-each select="creator">
+		         
+		         	<xsl:variable name="absolutePath" >
+			         	<xsl:for-each select="ancestor-or-self::*">
+			         		<xsl:text>/</xsl:text>			         	
+			         		<xsl:value-of select="local-name()" />
+			         	</xsl:for-each>
+			         </xsl:variable>	
+					<xsl:variable name="index" select="position()" />
+		         	<div>
+		         		<xsl:attribute name="resource">#xpointer(<xsl:value-of select="$absolutePath"/>[<xsl:value-of select="$index"/>])</xsl:attribute>
+		         		<xsl:attribute name="type">party</xsl:attribute>
 		               <xsl:call-template name="party">
 		                 <xsl:with-param name="partyfirstColStyle" select="$firstColStyle"/>
 		                 <xsl:with-param name="partysecondColStyle" select="$secondColStyle"/>
 		               </xsl:call-template>
+		         	</div>      
 		         </xsl:for-each>
          	</div>
          </div>
@@ -212,10 +211,21 @@
          	<label class="control-label">Data Set Contacts</label>
          	<div class="controls controls-well">
 	         	<xsl:for-each select="contact">
+	         		<xsl:variable name="absolutePath" >
+			         	<xsl:for-each select="ancestor-or-self::*">
+			         		<xsl:text>/</xsl:text>			         	
+			         		<xsl:value-of select="local-name()" />
+			         	</xsl:for-each>
+			         </xsl:variable>	
+					<xsl:variable name="index" select="position()" />
+		         	<div>
+		         		<xsl:attribute name="resource">#xpointer(<xsl:value-of select="$absolutePath"/>[<xsl:value-of select="$index"/>])</xsl:attribute>
+		         		<xsl:attribute name="type">party</xsl:attribute>
 	               <xsl:call-template name="party">
 	                 <xsl:with-param name="partyfirstColStyle" select="$firstColStyle"/>
 	                 <xsl:with-param name="partysecondColStyle" select="$secondColStyle"/>
 	               </xsl:call-template>
+	               </div>
 		             
 	         	</xsl:for-each>
 	         </div>	
@@ -228,10 +238,21 @@
          	<label class="control-label">Associated Parties</label>
          	<div class="controls controls-well">
 				<xsl:for-each select="associatedParty">
+					<xsl:variable name="absolutePath" >
+			         	<xsl:for-each select="ancestor-or-self::*">
+			         		<xsl:text>/</xsl:text>			         	
+			         		<xsl:value-of select="local-name()" />
+			         	</xsl:for-each>
+			         </xsl:variable>	
+					<xsl:variable name="index" select="position()" />
+		         	<div>
+		         		<xsl:attribute name="resource">#xpointer(<xsl:value-of select="$absolutePath"/>[<xsl:value-of select="$index"/>])</xsl:attribute>
+		         		<xsl:attribute name="type">party</xsl:attribute>
 					<xsl:call-template name="party">
 						<xsl:with-param name="partyfirstColStyle" select="$firstColStyle"/>
 						<xsl:with-param name="partysecondColStyle" select="$secondColStyle"/>
 					</xsl:call-template>
+					</div>	
 		         </xsl:for-each>
 	         </div>	
          </div>
@@ -244,10 +265,21 @@
          	<label class="control-label">Metadata Providers</label>
          	<div class="controls controls-well">
 				<xsl:for-each select="metadataProvider">
+					<xsl:variable name="absolutePath" >
+			         	<xsl:for-each select="ancestor-or-self::*">
+			         		<xsl:text>/</xsl:text>			         	
+			         		<xsl:value-of select="local-name()" />
+			         	</xsl:for-each>
+			         </xsl:variable>	
+					<xsl:variable name="index" select="position()" />
+		         	<div>
+		         		<xsl:attribute name="resource">#xpointer(<xsl:value-of select="$absolutePath"/>[<xsl:value-of select="$index"/>])</xsl:attribute>
+		         		<xsl:attribute name="type">party</xsl:attribute>
 	               <xsl:call-template name="party">
 	                 <xsl:with-param name="partyfirstColStyle" select="$firstColStyle"/>
 	                 <xsl:with-param name="partysecondColStyle" select="$secondColStyle"/>
 	               </xsl:call-template>
+					</div>	
 				</xsl:for-each>
 		   </div>
 		</div>      
@@ -259,10 +291,21 @@
          	<label class="control-label">Data Set Publishers</label>
          	<div class="controls controls-well">
 		         <xsl:for-each select="publisher">
+		         	<xsl:variable name="absolutePath" >
+			         	<xsl:for-each select="ancestor-or-self::*">
+			         		<xsl:text>/</xsl:text>			         	
+			         		<xsl:value-of select="local-name()" />
+			         	</xsl:for-each>
+			         </xsl:variable>	
+					<xsl:variable name="index" select="position()" />
+		         	<div>
+		         		<xsl:attribute name="resource">#xpointer(<xsl:value-of select="$absolutePath"/>[<xsl:value-of select="$index"/>])</xsl:attribute>
+		         		<xsl:attribute name="type">party</xsl:attribute>
 	               <xsl:call-template name="party">
 	                 <xsl:with-param name="partyfirstColStyle" select="$firstColStyle"/>
 	                 <xsl:with-param name="partysecondColStyle" select="$secondColStyle"/>
 	               </xsl:call-template>
+					</div>		
 		         </xsl:for-each>
 	         </div>
          </div>
@@ -568,11 +611,11 @@
 				<xsl:for-each select="dataTable">
 					<xsl:variable name="currentNode" select="position()" />
 					<xsl:for-each select="../.">
-						<div class="control-group">
-							<label class="control-label">
-								<xsl:text>Data Table</xsl:text>
-							</label>
-							<div class="controls controls-well">
+						<div class="control-group entity">
+							<div class="controls controls-well entitydetails">
+								<label class="control-label">
+									<xsl:text>Data Table</xsl:text>
+								</label>
 								<xsl:call-template name="chooseentity">
 									<xsl:with-param name="entitytype">dataTable</xsl:with-param>
 									<xsl:with-param name="entityindex" select="$currentNode" />
@@ -584,11 +627,11 @@
 				<xsl:for-each select="spatialRaster">
 					<xsl:variable name="currentNode" select="position()" />
 					<xsl:for-each select="../.">
-						<div class="control-group">
-							<label class="control-label">
-								<xsl:text>Spatial Raster</xsl:text>
-							</label>
-							<div class="controls controls-well">
+						<div class="control-group entity">
+							<div class="controls controls-well entitydetails">
+								<label class="control-label">
+									<xsl:text>Spatial Raster</xsl:text>
+								</label>
 								<xsl:call-template name="chooseentity">
 									<xsl:with-param name="entitytype">spatialRaster</xsl:with-param>
 									<xsl:with-param name="entityindex" select="$currentNode" />
@@ -600,11 +643,11 @@
 				<xsl:for-each select="spatialVector">
 					<xsl:variable name="currentNode" select="position()" />
 					<xsl:for-each select="../.">
-						<div class="control-group">
-							<label class="control-label">
-								<xsl:text>Spatial Vector</xsl:text>
-							</label>
-							<div class="controls controls-well">
+						<div class="control-group entity">
+							<div class="controls controls-well entitydetails">
+								<label class="control-label">
+									<xsl:text>Spatial Vector</xsl:text>
+								</label>
 								<xsl:call-template name="chooseentity">
 									<xsl:with-param name="entitytype">spatialVector</xsl:with-param>
 									<xsl:with-param name="entityindex" select="$currentNode" />
@@ -616,11 +659,11 @@
 				<xsl:for-each select="storedProcedure">
 					<xsl:variable name="currentNode" select="position()" />
 					<xsl:for-each select="../.">
-						<div class="control-group">
-							<label class="control-label">
-								<xsl:text>Stored Procedure</xsl:text>
-							</label>
-							<div class="controls controls-well">
+						<div class="control-group entity">
+							<div class="controls controls-well entitydetails">
+								<label class="control-label">
+									<xsl:text>Stored Procedure</xsl:text>
+								</label>
 								<xsl:call-template name="chooseentity">
 									<xsl:with-param name="entitytype">storedProcedure</xsl:with-param>
 									<xsl:with-param name="entityindex" select="$currentNode" />
@@ -632,11 +675,11 @@
 				<xsl:for-each select="view">
 					<xsl:variable name="currentNode" select="position()" />
 					<xsl:for-each select="../.">
-						<div class="control-group">
-							<label class="control-label">
-								<xsl:text>View</xsl:text>
-							</label>
-							<div class="controls controls-well">
+						<div class="control-group entity">
+							<div class="controls controls-well entitydetails">
+								<label class="control-label">
+									<xsl:text>View</xsl:text>
+								</label>
 								<xsl:call-template name="chooseentity">
 									<xsl:with-param name="entitytype">view</xsl:with-param>
 									<xsl:with-param name="entityindex" select="$currentNode" />
@@ -648,11 +691,11 @@
 				<xsl:for-each select="otherEntity">
 					<xsl:variable name="currentNode" select="position()" />
 					<xsl:for-each select="../.">
-						<div class="control-group">
-							<label class="control-label">
-								<xsl:text>Other Entity</xsl:text>
-							</label>
-							<div class="controls controls-well">
+						<div class="control-group entity">
+							<div class="controls controls-well entitydetails">
+								<label class="control-label">
+									<xsl:text>Other Entity</xsl:text>
+								</label>
 								<xsl:call-template name="chooseentity">
 									<xsl:with-param name="entitytype">otherEntity</xsl:with-param>
 									<xsl:with-param name="entityindex" select="$currentNode" />

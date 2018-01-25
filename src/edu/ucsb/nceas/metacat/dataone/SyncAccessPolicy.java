@@ -40,8 +40,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import org.apache.log4j.Logger;
-import org.dataone.client.CNode;
-import org.dataone.client.D1Client;
+import org.dataone.client.v2.CNode;
+import org.dataone.client.v2.itk.D1Client;
 import org.dataone.service.exceptions.InvalidRequest;
 import org.dataone.service.exceptions.InvalidToken;
 import org.dataone.service.exceptions.NotAuthorized;
@@ -52,13 +52,14 @@ import org.dataone.service.exceptions.VersionMismatch;
 import org.dataone.service.types.v1.AccessPolicy;
 import org.dataone.service.types.v1.AccessRule;
 import org.dataone.service.types.v1.Identifier;
+import org.dataone.service.types.v1.NodeReference;
 import org.dataone.service.types.v1.ObjectFormatIdentifier;
 import org.dataone.service.types.v1.ObjectInfo;
 import org.dataone.service.types.v1.ObjectList;
 import org.dataone.service.types.v1.Permission;
 import org.dataone.service.types.v1.Session;
 import org.dataone.service.types.v1.Subject;
-import org.dataone.service.types.v1.SystemMetadata;
+import org.dataone.service.types.v2.SystemMetadata;
 
 import edu.ucsb.nceas.metacat.AccessionNumberException;
 import edu.ucsb.nceas.metacat.IdentifierManager;
@@ -149,7 +150,7 @@ public class SyncAccessPolicy {
 
 			// Get sm, access policy for requested pid from the CN
 			try {
-				cnSysMeta = cn.getSystemMetadata(pid);
+				cnSysMeta = cn.getSystemMetadata(null, pid);
 			} catch (Exception e) {
 				logMetacat.error("Error getting system metadata for pid: "
 						+ pid.getValue() + " from cn: " + e.getMessage());
@@ -316,8 +317,16 @@ public class SyncAccessPolicy {
 			Date startTime = null;
 			Date endTime = null;
 			ObjectFormatIdentifier objectFormatId = null;
-			Boolean replicaStatus = false; // return only pids for which this mn
-											// is
+			//Boolean replicaStatus = false; // return only pids for which this mn
+			NodeReference thisMN = new NodeReference();
+			try {
+			    String currentNodeId = PropertyService.getInstance().getProperty("dataone.nodeId"); // return only pids for which this mn
+			    thisMN.setValue(currentNodeId);
+			} catch (Exception e) {
+			    logMetacat.error("SyncAccessPolicy.run - can't get the node id of this member node from the metacat property file since :"+e.getMessage());
+			    return;
+			}
+							// is
 			ObjectList objsToSync = null;
 			Integer count = 0;
 			Integer start = 0;
@@ -344,10 +353,13 @@ public class SyncAccessPolicy {
 			}
 
 			// Get the total count of guids before we start syncing
+			Identifier id = null;
+            boolean isSid = false;
 			try {
+			    
 				objsToSync = IdentifierManager.getInstance()
 						.querySystemMetadata(startTime, endTime,
-								objectFormatId, replicaStatus, start, count);
+								objectFormatId, thisMN, start, count, id, isSid);
 
 				logMetacat.debug("syncTask total # of guids: "
 						+ objsToSync.getTotal() + ", count for this page: "
@@ -380,7 +392,7 @@ public class SyncAccessPolicy {
 					objsToSync = IdentifierManager
 							.getInstance()
 							.querySystemMetadata(startTime, endTime,
-									objectFormatId, replicaStatus, start, count);
+									objectFormatId, thisMN, start, count, id, isSid);
 				} catch (Exception e) {
 					logMetacat.error("Error syncing ids");
 					syncError = true;

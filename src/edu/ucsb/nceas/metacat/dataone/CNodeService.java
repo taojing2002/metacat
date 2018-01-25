@@ -23,8 +23,13 @@
 
 package edu.ucsb.nceas.metacat.dataone;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.math.BigInteger;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
@@ -33,14 +38,16 @@ import java.util.concurrent.locks.Lock;
 
 import javax.servlet.http.HttpServletRequest;
 
+import org.apache.commons.beanutils.BeanUtils;
 import org.apache.log4j.Logger;
-import org.dataone.client.CNode;
-import org.dataone.client.D1Client;
-import org.dataone.client.MNode;
-import org.dataone.service.cn.v1.CNAuthorization;
-import org.dataone.service.cn.v1.CNCore;
-import org.dataone.service.cn.v1.CNRead;
-import org.dataone.service.cn.v1.CNReplication;
+import org.dataone.client.v2.CNode;
+import org.dataone.client.v2.MNode;
+import org.dataone.client.v2.itk.D1Client;
+import org.dataone.service.cn.v2.CNAuthorization;
+import org.dataone.service.cn.v2.CNCore;
+import org.dataone.service.cn.v2.CNRead;
+import org.dataone.service.cn.v2.CNReplication;
+import org.dataone.service.cn.v2.CNView;
 import org.dataone.service.exceptions.BaseException;
 import org.dataone.service.exceptions.IdentifierNotUnique;
 import org.dataone.service.exceptions.InsufficientResources;
@@ -56,17 +63,11 @@ import org.dataone.service.exceptions.VersionMismatch;
 import org.dataone.service.types.v1.AccessPolicy;
 import org.dataone.service.types.v1.Checksum;
 import org.dataone.service.types.v1.ChecksumAlgorithmList;
-import org.dataone.service.types.v1.DescribeResponse;
 import org.dataone.service.types.v1.Event;
 import org.dataone.service.types.v1.Identifier;
-import org.dataone.service.types.v1.Log;
-import org.dataone.service.types.v1.Node;
-import org.dataone.service.types.v1.NodeList;
 import org.dataone.service.types.v1.NodeReference;
 import org.dataone.service.types.v1.NodeType;
-import org.dataone.service.types.v1.ObjectFormat;
 import org.dataone.service.types.v1.ObjectFormatIdentifier;
-import org.dataone.service.types.v1.ObjectFormatList;
 import org.dataone.service.types.v1.ObjectList;
 import org.dataone.service.types.v1.ObjectLocationList;
 import org.dataone.service.types.v1.Permission;
@@ -75,15 +76,24 @@ import org.dataone.service.types.v1.ReplicationPolicy;
 import org.dataone.service.types.v1.ReplicationStatus;
 import org.dataone.service.types.v1.Session;
 import org.dataone.service.types.v1.Subject;
-import org.dataone.service.types.v1.SystemMetadata;
-import org.dataone.service.types.v1.util.ServiceMethodRestrictionUtil;
 import org.dataone.service.types.v1_1.QueryEngineDescription;
 import org.dataone.service.types.v1_1.QueryEngineList;
+import org.dataone.service.types.v2.Node;
+import org.dataone.service.types.v2.NodeList;
+import org.dataone.service.types.v2.ObjectFormat;
+import org.dataone.service.types.v2.ObjectFormatList;
+import org.dataone.service.types.v2.SystemMetadata;
+import org.dataone.service.types.v2.util.ServiceMethodRestrictionUtil;
+import org.dataone.service.util.TypeMarshaller;
+import org.jibx.runtime.JiBXException;
 
+import edu.ucsb.nceas.metacat.DBUtil;
 import edu.ucsb.nceas.metacat.EventLog;
 import edu.ucsb.nceas.metacat.IdentifierManager;
 import edu.ucsb.nceas.metacat.McdbDocNotFoundException;
 import edu.ucsb.nceas.metacat.dataone.hazelcast.HazelcastService;
+import edu.ucsb.nceas.metacat.properties.PropertyService;
+import edu.ucsb.nceas.utilities.PropertyNotFoundException;
 
 /**
  * Represents Metacat's implementation of the DataONE Coordinating Node 
@@ -93,10 +103,11 @@ import edu.ucsb.nceas.metacat.dataone.hazelcast.HazelcastService;
  *
  */
 public class CNodeService extends D1NodeService implements CNAuthorization,
-    CNCore, CNRead, CNReplication {
+    CNCore, CNRead, CNReplication, CNView {
 
   /* the logger instance */
   private Logger logMetacat = null;
+  public final static String V2V1MISSMATCH = "The Coordinating Node is not authorized to make systemMetadata changes on this object. Please make changes directly on the authoritative Member Node.";
 
   /**
    * singleton accessor
@@ -116,7 +127,7 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
     
   /**
    * Set the replication policy for an object given the object identifier
-   * 
+   * It only is applied to objects whose authoritative mn is a v1 node.
    * @param session - the Session object containing the credentials for the Subject
    * @param pid - the object identifier for the given object
    * @param policy - the replication policy to be applied
@@ -136,6 +147,23 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
       throws NotImplemented, NotFound, NotAuthorized, ServiceFailure, 
       InvalidRequest, InvalidToken, VersionMismatch {
       
+      // do we have a valid pid?
+      if (pid == null || pid.getValue().trim().equals("")) {
+          throw new InvalidRequest("4883", "The provided identifier was invalid.");
+          
+      }
+      
+      //only allow pid to be passed
+      String serviceFailure = "4882";
+      String notFound = "4884";
+      checkV1SystemMetaPidExist(pid, serviceFailure, "The object for given PID "+pid.getValue()+" couldn't be identified if it exists",  notFound, 
+              "No object could be found for given PID: "+pid.getValue());
+      
+      /*String serviceFailureCode = "4882";
+      Identifier sid = getPIDForSID(pid, serviceFailureCode);
+      if(sid != null) {
+          pid = sid;
+      }*/
       // The lock to be used for this identifier
       Lock lock = null;
       
@@ -167,7 +195,17 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
                   throw new NotFound("4884", "Couldn't find an object identified by " + pid.getValue());
                   
               }
-
+              D1NodeVersionChecker checker = new D1NodeVersionChecker(systemMetadata.getAuthoritativeMemberNode());
+              String version = checker.getVersion("MNStorage");
+              if(version == null) {
+                  throw new ServiceFailure("4882", "Couldn't determine the authoritative member node storage version for the pid "+pid.getValue());
+              } else if (version.equalsIgnoreCase(D1NodeVersionChecker.V2)) {
+                  //we don't apply this method to an object whose authoritative node is v2
+                  throw new NotAuthorized("4881", V2V1MISSMATCH);
+              } else if (!version.equalsIgnoreCase(D1NodeVersionChecker.V1)) {
+                  //we don't understand this version (it is not v1 or v2)
+                  throw new InvalidRequest("4883", "The version of the MNStorage is "+version+" for the authoritative member node of the object "+pid.getValue()+". We don't support it.");
+              }
               // does the request have the most current system metadata?
               if ( systemMetadata.getSerialVersion().longValue() != serialVersion ) {
                  String msg = "The requested system metadata version number " + 
@@ -236,7 +274,7 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 		Subject subject = session.getSubject();
 
 		// are we allowed to do this?
-		boolean isAuthorized = false;
+		/*boolean isAuthorized = false;
 		try {
 			isAuthorized = isAuthorized(session, pid, Permission.WRITE);
 		} catch (InvalidRequest e) {
@@ -247,6 +285,13 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 					+ " not allowed by " + subject.getValue() + " on "
 					+ pid.getValue());
 
+		}*/
+		if(session == null) {
+		    throw new NotAuthorized("4882", "Session cannot be null. It is not authorized for deleting the replication metadata of the object "+pid.getValue());
+		} else {
+		    if(!isCNAdmin(session)) {
+		        throw new NotAuthorized("4882", "The client -"+ session.getSubject().getValue()+ "is not a CN and is not authorized for deleting the replication metadata of the object "+pid.getValue());
+		    }
 		}
 
 		SystemMetadata systemMetadata = null;
@@ -283,11 +328,11 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 			  
 			// check permissions
 			// TODO: is this necessary?
-			List<Node> nodeList = D1Client.getCN().listNodes().getNodeList();
+			/*List<Node> nodeList = D1Client.getCN().listNodes().getNodeList();
 			boolean isAllowed = ServiceMethodRestrictionUtil.isMethodAllowed(session.getSubject(), nodeList, "CNReplication", "deleteReplicationMetadata");
 			if (!isAllowed) {
 				throw new NotAuthorized("4881", "Caller is not authorized to deleteReplicationMetadata");
-			}
+			}*/
 			  
 			// delete the replica from the given node
 			// CSJ: use CN.delete() to truly delete a replica, semantically
@@ -307,7 +352,8 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 			// update the metadata
 			try {
 				systemMetadata.setSerialVersion(systemMetadata.getSerialVersion().add(BigInteger.ONE));
-				systemMetadata.setDateSysMetadataModified(Calendar.getInstance().getTime());
+				//we don't need to update the modification date.
+				//systemMetadata.setDateSysMetadataModified(Calendar.getInstance().getTime());
 				HazelcastService.getInstance().getSystemMetadataMap().put(systemMetadata.getIdentifier(), systemMetadata);
 			} catch (RuntimeException e) {
 				throw new ServiceFailure("4882", e.getMessage());
@@ -360,6 +406,12 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
           throw new ServiceFailure("4960", "The provided identifier was invalid.");
           
       }
+      
+      String serviceFailureCode = "4962";
+      Identifier sid = getPIDForSID(pid, serviceFailureCode);
+      if(sid != null) {
+          pid = sid;
+      }
 
 	  // check that it is CN/admin
 	  boolean allowed = isAdminAuthorized(session);
@@ -401,12 +453,12 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 				sysMeta.setDateSysMetadataModified(Calendar.getInstance().getTime());
 				HazelcastService.getInstance().getSystemMetadataMap().put(pid, sysMeta);*/
 			    //move the systemmetadata object from the map and delete the records in the systemmetadata database table
-			    //since this is cn, we don't need worry about the mn solr index.
-				HazelcastService.getInstance().getSystemMetadataMap().remove(pid);
-				HazelcastService.getInstance().getIdentifiers().remove(pid);//.
-				String username = session.getSubject().getValue();//just for logging purpose
-				//since data objects were not registered in the identifier table, we use pid as the docid
-				EventLog.getInstance().log(request.getRemoteAddr(), request.getHeader("User-Agent"), username, pid.getValue(), Event.DELETE.xmlValue());
+	            //since this is cn, we don't need worry about the mn solr index.
+	            HazelcastService.getInstance().getSystemMetadataMap().remove(pid);
+	            HazelcastService.getInstance().getIdentifiers().remove(pid);
+	            String username = session.getSubject().getValue();//just for logging purpose
+                //since data objects were not registered in the identifier table, we use pid as the docid
+                EventLog.getInstance().log(request.getRemoteAddr(), request.getHeader("User-Agent"), username, pid.getValue(), Event.DELETE.xmlValue());
 				
 			  } else {
 				  throw new ServiceFailure("4962", "Couldn't delete the object " + pid.getValue() +
@@ -429,6 +481,9 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 //                  request.getHeader("User-Agent"), session.getSubject().getValue(), 
 //                  pid.getValue(), Event.DELETE.xmlValue());
 
+      } catch (SQLException e) {
+          throw new ServiceFailure("4962", "Couldn't delete " + pid.getValue() + 
+                  ". The local id of the object with the identifier can't be identified since " + e.getMessage());
       }
 
       // get the node list
@@ -519,6 +574,12 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 	  // check that it is CN/admin
 	  boolean allowed = isAdminAuthorized(session);
 	  
+	  String serviceFailureCode = "4972";
+	  Identifier sid = getPIDForSID(pid, serviceFailureCode);
+	  if(sid != null) {
+	        pid = sid;
+	  }
+	  
 	  //check if it is the authoritative member node
 	  if(!allowed) {
 	      allowed = isAuthoritativeMNodeAdmin(session, pid);
@@ -531,55 +592,58 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 		  throw new NotAuthorized("4970", msg);
 	  }
 	  
-      // Check for the existing identifier
       try {
-          localId = IdentifierManager.getInstance().getLocalId(pid.getValue());
-          super.archive(session, pid);
-          
-      } catch (McdbDocNotFoundException e) {
-          // This object is not registered in the identifier table. Assume it is of formatType DATA,
-    	  // and set the archive flag. (i.e. the *object* doesn't exist on the CN)
-    	  
-          try {
-  			  lock = HazelcastService.getInstance().getLock(pid.getValue());
-  			  lock.lock();
-  			  logMetacat.debug("Locked identifier " + pid.getValue());
-
-			  SystemMetadata sysMeta = HazelcastService.getInstance().getSystemMetadataMap().get(pid);
-			  if ( sysMeta != null ) {
-				sysMeta.setSerialVersion(sysMeta.getSerialVersion().add(BigInteger.ONE));
-				sysMeta.setArchived(true);
-				sysMeta.setDateSysMetadataModified(Calendar.getInstance().getTime());
-				HazelcastService.getInstance().getSystemMetadataMap().put(pid, sysMeta);
-			    // notify the replicas
-				notifyReplicaNodes(sysMeta);
-				  
-			  } else {
-				  throw new ServiceFailure("4972", "Couldn't archive the object " + pid.getValue() +
-					  ". Couldn't obtain the system metadata record.");
-				  
-			  }
-			  
-		  } catch (RuntimeException re) {
-			  throw new ServiceFailure("4972", "Couldn't archive " + pid.getValue() + 
-				  ". The error message was: " + re.getMessage());
-			  
-		  } finally {
-			  lock.unlock();
-			  logMetacat.debug("Unlocked identifier " + pid.getValue());
-
-		  }
-
-          // NOTE: cannot log the archive without localId
-//          EventLog.getInstance().log(request.getRemoteAddr(), 
-//                  request.getHeader("User-Agent"), session.getSubject().getValue(), 
-//                  pid.getValue(), Event.DELETE.xmlValue());
-
+          HazelcastService.getInstance().getSystemMetadataMap().lock(pid);
+          logMetacat.debug("CNodeService.archive - lock the system metadata for "+pid.getValue());
+          SystemMetadata sysMeta = HazelcastService.getInstance().getSystemMetadataMap().get(pid);
+          D1NodeVersionChecker checker = new D1NodeVersionChecker(sysMeta.getAuthoritativeMemberNode());
+          String version = checker.getVersion("MNStorage");
+          if(version == null) {
+              throw new ServiceFailure("4972", "Couldn't determine the authoritative member node storage version for the pid "+pid.getValue());
+          } else if (version.equalsIgnoreCase(D1NodeVersionChecker.V2)) {
+              //we don't apply this method to an object whose authoritative node is v2
+              throw new NotAuthorized("4970", V2V1MISSMATCH);
+          } else if (!version.equalsIgnoreCase(D1NodeVersionChecker.V1)) {
+              //we don't understand this version (it is not v1 or v2)
+              throw new NotImplemented("4974", "The version of the MNStorage is "+version+" for the authoritative member node of the object "+pid.getValue()+". We don't support it.");
+          }
+          boolean needModifyDate = true;
+          archiveCNObjectWithNotificationReplica(session, pid, sysMeta, needModifyDate);
+      
+      } finally {
+          HazelcastService.getInstance().getSystemMetadataMap().unlock(pid);
+          logMetacat.debug("CNodeService.archive - unlock the system metadata for "+pid.getValue());
       }
 
 	  return pid;
       
   }
+  
+  
+  /**
+   * Archive a object on cn and notify the replica. This method doesn't lock the system metadata map. The caller should lock it.
+   * This method doesn't check the authorization; this method only accept a pid.
+   * @param session
+   * @param pid
+   * @param sysMeta
+   * @param notifyReplica
+   * @return
+   * @throws InvalidToken
+   * @throws ServiceFailure
+   * @throws NotAuthorized
+   * @throws NotFound
+   * @throws NotImplemented
+   */
+  private Identifier archiveCNObjectWithNotificationReplica(Session session, Identifier pid, SystemMetadata sysMeta, boolean needModifyDate) 
+                  throws InvalidToken, ServiceFailure, NotAuthorized, NotFound, NotImplemented {
+          boolean logArchive = true;
+          archiveCNObject(logArchive, session, pid, sysMeta, needModifyDate);
+          // notify the replicas
+          notifyReplicaNodes(sysMeta);
+          return pid;
+    }
+  
+  
   
   /**
    * Set the obsoletedBy attribute in System Metadata
@@ -601,6 +665,33 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 			Identifier obsoletedByPid, long serialVersion)
 			throws NotImplemented, NotFound, NotAuthorized, ServiceFailure,
 			InvalidRequest, InvalidToken, VersionMismatch {
+      
+      // do we have a valid pid?
+      if (pid == null || pid.getValue().trim().equals("")) {
+          throw new InvalidRequest("4942", "The provided identifier was invalid.");
+          
+      }
+      
+      /*String serviceFailureCode = "4941";
+      Identifier sid = getPIDForSID(pid, serviceFailureCode);
+      if(sid != null) {
+          pid = sid;
+      }*/
+      
+      // do we have a valid pid?
+      if (obsoletedByPid == null || obsoletedByPid.getValue().trim().equals("")) {
+          throw new InvalidRequest("4942", "The provided obsoletedByPid was invalid.");
+          
+      }
+      
+      try {
+          if(IdentifierManager.getInstance().systemMetadataSIDExists(obsoletedByPid)) {
+              throw new InvalidRequest("4942", "The provided obsoletedByPid "+obsoletedByPid.getValue()+" is an existing SID. However, it must NOT be an SID.");
+          }
+      } catch (SQLException ee) {
+          throw new ServiceFailure("4941", "Couldn't determine if the obsoletedByPid "+obsoletedByPid.getValue()+" is an SID or not. The id shouldn't be an SID.");
+      }
+      
 
 		// The lock to be used for this identifier
 		Lock lock = null;
@@ -643,6 +734,19 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 					throw new VersionMismatch("4886", msg);
 
 				}
+				
+				 //only apply to the object whose authoritative member node is v1.
+	              D1NodeVersionChecker checker = new D1NodeVersionChecker(systemMetadata.getAuthoritativeMemberNode());
+	              String version = checker.getVersion("MNStorage");
+	              if(version == null) {
+	                  throw new ServiceFailure("4941", "Couldn't determine the authoritative member node storage version for the pid "+pid.getValue());
+	              } else if (version.equalsIgnoreCase(D1NodeVersionChecker.V2)) {
+	                  //we don't apply this method to an object whose authoritative node is v2
+	                  throw new NotAuthorized("4945", V2V1MISSMATCH);
+	              } else if (!version.equalsIgnoreCase(D1NodeVersionChecker.V1)) {
+	                  //we don't understand this version (it is not v1 or v2)
+	                  throw new InvalidRequest("4942", "The version of the MNStorage is "+version+" for the authoritative member node of the object "+pid.getValue()+". We don't support it.");
+	              }
 
 			} catch (RuntimeException e) { // Catch is generic since HZ throws RuntimeException
 				throw new NotFound("4884", "No record found for: " + pid.getValue());
@@ -698,7 +802,25 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 	  // cannot be called by public
 	  if (session == null) {
 		  throw new NotAuthorized("4720", "Session cannot be null");
-	  }
+	  } 
+	  
+	  /*else {
+	      if(!isCNAdmin(session)) {
+              throw new NotAuthorized("4720", "The client -"+ session.getSubject().getValue()+ "is not a CN and is not authorized for setting the replication status of the object "+pid.getValue());
+        }
+	  }*/
+	  
+	// do we have a valid pid?
+      if (pid == null || pid.getValue().trim().equals("")) {
+          throw new InvalidRequest("4730", "The provided identifier was invalid.");
+          
+      }
+      
+      /*String serviceFailureCode = "4700";
+      Identifier sid = getPIDForSID(pid, serviceFailureCode);
+      if(sid != null) {
+          pid = sid;
+      }*/
       
       // The lock to be used for this identifier
       Lock lock = null;
@@ -735,6 +857,7 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
                  String msg = "The replication request of the object identified by " + 
                      pid.getValue() + " failed.  The error message was " +
                      failure.getMessage() + ".";
+                 logMetacat.error(msg);
               }
               
               if (replicas.size() > 0 && replicas != null) {
@@ -792,14 +915,15 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 
               if ( !allowed ) {
                   //check for CN admin access
-                  allowed = isAuthorized(session, pid, Permission.WRITE);
+                  //allowed = isAuthorized(session, pid, Permission.WRITE);
+                  allowed = isCNAdmin(session);
                   
               }              
               
               if ( !allowed ) {
                   String msg = "The subject identified by "
                           + subject.getValue()
-                          + " does not have permission to set the replication status for "
+                          + " is not a CN or MN, and does not have permission to set the replication status for "
                           + "the replica identified by "
                           + targetNode.getValue() + ".";
                   logMetacat.info(msg);
@@ -829,6 +953,11 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
             			  targetReplica.getReplicaMemberNode().getValue());
               }
               
+              if(targetReplica.getReplicationStatus().equals(status)) {
+                  //There is no change in the status, we do nothing.
+                  return true;
+              }
+              
               targetReplica.setReplicationStatus(status);
               
               logMetacat.debug("Set the replication status for " + 
@@ -850,7 +979,9 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
           // update the metadata
           try {
               systemMetadata.setSerialVersion(systemMetadata.getSerialVersion().add(BigInteger.ONE));
-              systemMetadata.setDateSysMetadataModified(Calendar.getInstance().getTime());
+              // Based on CN behavior discussion 9/16/15, we no longer want to 
+              // update the modified date for changes to the replica list
+              //systemMetadata.setDateSysMetadataModified(Calendar.getInstance().getTime());
               HazelcastService.getInstance().getSystemMetadataMap().put(systemMetadata.getIdentifier(), systemMetadata);
 
               if ( !status.equals(ReplicationStatus.QUEUED) && 
@@ -872,8 +1003,9 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
                       failure.getMessage());
               }
               
-			  // update the replica nodes about the completed replica when complete
-              if (status.equals(ReplicationStatus.COMPLETED)) {
+			  // update the replica nodes about the completed replica when complete, failed or invalid
+              if (status.equals(ReplicationStatus.COMPLETED) || status.equals(ReplicationStatus.FAILED) ||
+                      status.equals(ReplicationStatus.INVALIDATED)) {
 				notifyReplicaNodes(systemMetadata);
 			}
           
@@ -1033,6 +1165,147 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
       
   }
 
+    @Override
+    public ObjectFormatIdentifier addFormat(Session session, ObjectFormatIdentifier formatId, ObjectFormat format)
+            throws ServiceFailure, NotFound, NotImplemented, NotAuthorized, InvalidToken {
+
+        logMetacat.debug("CNodeService.addFormat() called.\n" + 
+                "format ID: " + format.getFormatId() + "\n" + 
+                "format name: " + format.getFormatName() + "\n" + 
+                "format type: " + format.getFormatType() );
+        
+        // FIXME remove:
+        if (true)
+            throw new NotImplemented("0000", "Implementation underway... Will need testing too...");
+        
+        if (!isAdminAuthorized(session))
+            throw new NotAuthorized("0000", "Not authorized to call addFormat()");
+
+        String separator = ".";
+        try {
+            separator = PropertyService.getProperty("document.accNumSeparator");
+        } catch (PropertyNotFoundException e) {
+            logMetacat.warn("Unable to find property \"document.accNumSeparator\"\n" + e.getMessage());
+        }
+
+        // find pids of last and next ObjectFormatList
+        String OBJECT_FORMAT_DOCID = ObjectFormatService.OBJECT_FORMAT_DOCID;
+        int lastRev = -1;
+        try {
+            lastRev = DBUtil.getLatestRevisionInDocumentTable(OBJECT_FORMAT_DOCID);
+        } catch (SQLException e) {
+            throw new ServiceFailure("0000", "Unable to locate last revision of the object format list.\n" + e.getMessage());
+        }
+        int nextRev = lastRev + 1;
+        String lastDocID = OBJECT_FORMAT_DOCID + separator + lastRev;
+        String nextDocID = OBJECT_FORMAT_DOCID + separator + nextRev;
+        
+        Identifier lastPid = new Identifier();
+        lastPid.setValue(lastDocID);
+        Identifier nextPid = new Identifier();
+        nextPid.setValue(nextDocID);
+        
+        logMetacat.debug("Last ObjectFormatList document ID: " + lastDocID + "\n" 
+                + "Next ObjectFormatList document ID: " + nextDocID);
+        
+        // add new format to the current ObjectFormatList
+        ObjectFormatList objectFormatList = ObjectFormatService.getInstance().listFormats();
+        List<ObjectFormat> innerList = objectFormatList.getObjectFormatList();
+        innerList.add(format);
+
+        // get existing (last) sysmeta and make a copy
+        SystemMetadata lastSysmeta = getSystemMetadata(session, lastPid);
+        SystemMetadata nextSysmeta = new SystemMetadata();
+        try {
+            BeanUtils.copyProperties(nextSysmeta, lastSysmeta);
+        } catch (IllegalAccessException | InvocationTargetException e) {
+            throw new ServiceFailure("0000", "Unable to create system metadata for updated object format list.\n" + e.getMessage());
+        }
+        
+        // create the new object format list, and update the old sysmeta with obsoletedBy
+        createNewObjectFormatList(session, lastPid, nextPid, objectFormatList, nextSysmeta);
+        updateOldObjectFormatList(session, lastPid, nextPid, lastSysmeta);
+        
+        // TODO add to ObjectFormatService local cache?
+        
+        return formatId;
+    }
+
+    /**
+     * Creates the object for the next / updated version of the ObjectFormatList.
+     * 
+     * @param session
+     * @param lastPid
+     * @param nextPid
+     * @param objectFormatList
+     * @param lastSysmeta
+     */
+    private void createNewObjectFormatList(Session session, Identifier lastPid, Identifier nextPid,
+            ObjectFormatList objectFormatList, SystemMetadata lastSysmeta) 
+                    throws InvalidToken, ServiceFailure, NotAuthorized, NotImplemented {
+        
+        PipedInputStream is = new PipedInputStream();
+        PipedOutputStream os = null;
+        
+        try {
+            os = new PipedOutputStream(is);
+            TypeMarshaller.marshalTypeToOutputStream(objectFormatList, os);
+        } catch (JiBXException | IOException e) {
+            throw new ServiceFailure("0000", "Unable to marshal object format list.\n" + e.getMessage());
+        } finally {
+            try {
+                os.flush();
+                os.close();
+            } catch (IOException ioe) {
+                throw new ServiceFailure("0000", "Unable to marshal object format list.\n" + ioe.getMessage());
+            }
+        }
+        
+        BigInteger docSize = lastSysmeta.getSize();
+        try {
+            docSize = BigInteger.valueOf(is.available());
+        } catch (IOException e) {
+            logMetacat.warn("Unable to set an accurate size for the new object format list.", e);
+        }
+        
+        lastSysmeta.setIdentifier(nextPid);
+        lastSysmeta.setObsoletes(lastPid);
+        lastSysmeta.setSize(docSize); 
+        lastSysmeta.setSubmitter(session.getSubject());
+        lastSysmeta.setDateUploaded(new Date());
+        
+        // create new object format list
+        try {
+            create(session, nextPid, is, lastSysmeta);
+        } catch (IdentifierNotUnique | UnsupportedType | InsufficientResources
+                | InvalidSystemMetadata | InvalidRequest e) {
+            throw new ServiceFailure("0000", "Unable to create() new object format list" + e.getMessage());
+        }
+    }
+  
+    /**
+     * Updates the SystemMetadata for the old version of the ObjectFormatList
+     * by setting the obsoletedBy value to the pid of the new version of the 
+     * ObjectFormatList.
+     * 
+     * @param session
+     * @param lastPid
+     * @param obsoletedByPid
+     * @param lastSysmeta
+     * @throws ServiceFailure
+     */
+    private void updateOldObjectFormatList(Session session, Identifier lastPid, Identifier obsoletedByPid, SystemMetadata lastSysmeta) 
+            throws ServiceFailure {
+        
+        lastSysmeta.setObsoletedBy(obsoletedByPid);
+        
+        try {
+            this.updateSystemMetadata(session, lastPid, lastSysmeta);
+        } catch (NotImplemented | NotAuthorized | ServiceFailure | InvalidRequest
+                | InvalidSystemMetadata | InvalidToken e) {
+            throw new ServiceFailure("0000", "Unable to update metadata of old object format list.\n" + e.getMessage());
+        }
+    }
   /**
    * Returns a list of all object formats registered in the DataONE Object 
    * Format Vocabulary
@@ -1097,6 +1370,19 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
           //check these against the docs and correct them
           throw new NotAuthorized("4861", "No Session - could not authorize for registration." +
                   "  If you are not logged in, please do so and retry the request.");
+      } else {
+          //only CN is allwoed
+          if(!isCNAdmin(session)) {
+                throw new NotAuthorized("4861", "The client -"+ session.getSubject().getValue()+ "is not a CN and is not authorized for registering the system metadata of the object "+pid.getValue());
+          }
+      }
+      // the identifier can't be an SID
+      try {
+          if(IdentifierManager.getInstance().systemMetadataSIDExists(pid)) {
+              throw new InvalidRequest("4863", "The provided identifier "+pid.getValue()+" is a series id which is not allowed.");
+          }
+      } catch (SQLException sqle) {
+          throw new ServiceFailure("4862", "Couldn't determine if the pid "+pid.getValue()+" is a series id since "+sqle.getMessage());
       }
       
       // verify that guid == SystemMetadata.getIdentifier()
@@ -1107,6 +1393,15 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
               "The identifier in method call (" + pid.getValue() + 
               ") does not match identifier in system metadata (" +
               sysmeta.getIdentifier().getValue() + ").");
+      }
+      
+      //check if the sid is legitimate in the system metadata
+      //checkSidInModifyingSystemMetadata(sysmeta, "4864", "4862");
+      Identifier sid = sysmeta.getSeriesId();
+      if(sid != null) {
+          if (!isValidIdentifier(sid)) {
+              throw new InvalidRequest("4863", "The series id in the system metadata is invalid in the request.");
+          }
       }
 
       try {
@@ -1124,8 +1419,13 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
           // insert the system metadata into the object store
           logMetacat.debug("Starting to insert SystemMetadata...");
           try {
-              sysmeta.setSerialVersion(BigInteger.ONE);
-              sysmeta.setDateSysMetadataModified(Calendar.getInstance().getTime());
+              //for the object whose authoriative mn is v1. we need reset the modification date.
+              //d1-sync already set the serial version. so we don't need do again.
+              D1NodeVersionChecker checker = new D1NodeVersionChecker(sysmeta.getAuthoritativeMemberNode());
+              String version = checker.getVersion("MNStorage");
+              if(version != null && version.equalsIgnoreCase(D1NodeVersionChecker.V1)) {
+                  sysmeta.setDateSysMetadataModified(Calendar.getInstance().getTime());
+              }
               HazelcastService.getInstance().getSystemMetadataMap().put(sysmeta.getIdentifier(), sysmeta);
               
           } catch (RuntimeException e) {
@@ -1156,6 +1456,9 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
       } catch (McdbDocNotFoundException e) {
     	  // do nothing, no localId to log with
     	  logMetacat.warn("Could not log 'registerSystemMetadata' event because no localId was found for pid: " + pid.getValue());
+      } catch (SQLException ee) {
+          // do nothing, no localId to log with
+          logMetacat.warn("Could not log 'registerSystemMetadata' event because the localId couldn't be identified for pid: " + pid.getValue());
       }
       
       
@@ -1223,7 +1526,7 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 
   @Override
   public boolean hasReservation(Session session, Subject subject, Identifier pid) 
-      throws InvalidToken, ServiceFailure, NotFound, NotAuthorized, IdentifierNotUnique, 
+      throws InvalidToken, ServiceFailure, NotFound, NotAuthorized, 
       NotImplemented, InvalidRequest {
   
       throw new NotImplemented("4191", "hasReservation not implemented on this node");
@@ -1254,9 +1557,21 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
       
       // The lock to be used for this identifier
       Lock lock = null;
+      
+      // do we have a valid pid?
+      if (pid == null || pid.getValue().trim().equals("")) {
+          throw new InvalidRequest("4442", "The provided identifier was invalid.");
+          
+      }
 
       // get the subject
       Subject subject = session.getSubject();
+      
+      String serviceFailureCode = "4490";
+      Identifier sid = getPIDForSID(pid, serviceFailureCode);
+      if(sid != null) {
+          pid = sid;
+      }
       
       // are we allowed to do this?
       if (!isAuthorized(session, pid, Permission.CHANGE_PERMISSION)) {
@@ -1274,6 +1589,9 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
           try {
               systemMetadata = HazelcastService.getInstance().getSystemMetadataMap().get(pid);
               
+              if(systemMetadata == null) {
+                  throw new NotFound("4460", "The object "+pid.getValue()+" doesn't exist in the node.");
+              }
               // does the request have the most current system metadata?
               if ( systemMetadata.getSerialVersion().longValue() != serialVersion ) {
                  String msg = "The requested system metadata version number " + 
@@ -1282,6 +1600,20 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
                      ". Please get the latest copy in order to modify it.";
                  throw new VersionMismatch("4443", msg);
               }
+              
+              //only apply to the object whose authoritative member node is v1.
+              D1NodeVersionChecker checker = new D1NodeVersionChecker(systemMetadata.getAuthoritativeMemberNode());
+              String version = checker.getVersion("MNStorage");
+              if(version == null) {
+                  throw new ServiceFailure("4490", "Couldn't determine the authoritative member node storage version for the pid "+pid.getValue());
+              } else if (version.equalsIgnoreCase(D1NodeVersionChecker.V2)) {
+                  //we don't apply this method to an object whose authoritative node is v2
+                  throw new NotAuthorized("4440", V2V1MISSMATCH);
+              } else if (!version.equalsIgnoreCase(D1NodeVersionChecker.V1)) {
+                  //we don't understand this version (it is not v1 or v2)
+                  throw new InvalidRequest("4442", "The version of the MNStorage is "+version+" for the authoritative member node of the object "+pid.getValue()+". We don't support it.");
+              }
+              
               
           } catch (RuntimeException e) { // Catch is generic since HZ throws RuntimeException
               throw new NotFound("4460", "No record found for: " + pid.getValue());
@@ -1472,12 +1804,17 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
     throws InvalidToken, ServiceFailure, NotAuthorized, IdentifierNotUnique, 
     UnsupportedType, InsufficientResources, InvalidSystemMetadata, 
     NotImplemented, InvalidRequest {
-                  
+       
+   // verify the pid is valid format
+      if (!isValidIdentifier(pid)) {
+          throw new InvalidRequest("4891", "The provided identifier is invalid.");
+      }
       // The lock to be used for this identifier
       Lock lock = null;
 
       try {
           lock = HazelcastService.getInstance().getLock(pid.getValue());
+          lock.lock();
           // are we allowed?
           boolean isAllowed = false;
           isAllowed = isAdminAuthorized(session);
@@ -1489,12 +1826,25 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 
           // proceed if we're called by a CN
           if ( isAllowed ) {
+              //check if the series id is legitimate. It uses the same rules of the method registerSystemMetadata
+              //checkSidInModifyingSystemMetadata(sysmeta, "4896", "4893");
+              Identifier sid = sysmeta.getSeriesId();
+              if(sid != null) {
+                  if (!isValidIdentifier(sid)) {
+                      throw new InvalidRequest("4891", "The series id in the system metadata is invalid in the request.");
+                  }
+              }
               // create the coordinating node version of the document      
-              lock.lock();
               logMetacat.debug("Locked identifier " + pid.getValue());
               sysmeta.setSerialVersion(BigInteger.ONE);
-              sysmeta.setDateSysMetadataModified(Calendar.getInstance().getTime());
-              sysmeta.setArchived(false); // this is a create op, not update
+              //for the object whose authoritative mn is v1. we need reset the modification date.
+              //for the object whose authoritative mn is v2. we just accept the modification date.
+              D1NodeVersionChecker checker = new D1NodeVersionChecker(sysmeta.getAuthoritativeMemberNode());
+              String version = checker.getVersion("MNStorage");
+              if(version != null && version.equalsIgnoreCase(D1NodeVersionChecker.V1)) {
+                  sysmeta.setDateSysMetadataModified(Calendar.getInstance().getTime());
+              }
+              //sysmeta.setArchived(false); // this is a create op, not update
               
               // the CN should have set the origin and authoritative member node fields
               try {
@@ -1535,7 +1885,7 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
   /**
    * Set access for a given object using the object identifier and a Subject
    * under a given Session.
-   * 
+   * This method only applies the objects whose authoritative mn is a v1 node.
    * @param session - the Session object containing the credentials for the Subject
    * @param pid - the object identifier for the given object to apply the policy
    * @param policy - the access policy to be applied
@@ -1553,6 +1903,17 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
       throws InvalidToken, ServiceFailure, NotFound, NotAuthorized, 
       NotImplemented, InvalidRequest, VersionMismatch {
       
+   // do we have a valid pid?
+      if (pid == null || pid.getValue().trim().equals("")) {
+          throw new InvalidRequest("4402", "The provided identifier was invalid.");
+          
+      }
+      
+      String serviceFailureCode = "4430";
+      Identifier sid = getPIDForSID(pid, serviceFailureCode);
+      if(sid != null) {
+          pid = sid;
+      }
       // The lock to be used for this identifier
       Lock lock = null;
       SystemMetadata systemMetadata = null;
@@ -1588,6 +1949,18 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
                      ". Please get the latest copy in order to modify it.";
                  throw new VersionMismatch("4402", msg);
                  
+              }
+              
+              D1NodeVersionChecker checker = new D1NodeVersionChecker(systemMetadata.getAuthoritativeMemberNode());
+              String version = checker.getVersion("MNStorage");
+              if(version == null) {
+                  throw new ServiceFailure("4430", "Couldn't determine the authoritative member node storage version for the pid "+pid.getValue());
+              } else if (version.equalsIgnoreCase(D1NodeVersionChecker.V2)) {
+                  //we don't apply this method to an object whose authoritative node is v2
+                  throw new NotAuthorized("4420", V2V1MISSMATCH);
+              } else if (!version.equalsIgnoreCase(D1NodeVersionChecker.V1)) {
+                  //we don't understand this version (it is not v1 or v2)
+                  throw new InvalidRequest("4402", "The version of the MNStorage is "+version+" for the authoritative member node of the object "+pid.getValue()+". We don't support it.");
               }
               
           } catch (RuntimeException e) {
@@ -1656,7 +2029,14 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
       Subject subject = session.getSubject();
       
       // are we allowed to do this?
-      try {
+      if(session == null) {
+          throw new NotAuthorized("4851", "Session cannot be null. It is not authorized for updating the replication metadata of the object "+pid.getValue());
+      } else {
+          if(!isCNAdmin(session)) {
+              throw new NotAuthorized("4851", "The client -"+ session.getSubject().getValue()+ "is not a CN and is not authorized for updating the replication metadata of the object "+pid.getValue());
+        }
+      }
+      /*try {
 
           // what is the controlling permission?
           if (!isAuthorized(session, pid, Permission.WRITE)) {
@@ -1669,7 +2049,7 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
           throw new NotAuthorized("4851", "not allowed by " + subject.getValue() + 
                   " on " + pid.getValue());  
           
-      }
+      }*/
 
       SystemMetadata systemMetadata = null;
       try {
@@ -1730,7 +2110,9 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
           // update the metadata
           try {
               systemMetadata.setSerialVersion(systemMetadata.getSerialVersion().add(BigInteger.ONE));
-              systemMetadata.setDateSysMetadataModified(Calendar.getInstance().getTime());
+              // Based on CN behavior discussion 9/16/15, we no longer want to 
+              // update the modified date for changes to the replica list
+              //systemMetadata.setDateSysMetadataModified(Calendar.getInstance().getTime());
               HazelcastService.getInstance().getSystemMetadataMap().put(systemMetadata.getIdentifier(), systemMetadata);
               
               // inform replica nodes of the change if the status is complete
@@ -1763,22 +2145,12 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
    */
   @Override
   public ObjectList listObjects(Session session, Date startTime, 
-      Date endTime, ObjectFormatIdentifier formatid, Boolean replicaStatus,
+      Date endTime, ObjectFormatIdentifier formatid, NodeReference nodeId,Identifier identifier,
       Integer start, Integer count)
       throws InvalidRequest, InvalidToken, NotAuthorized, NotImplemented,
       ServiceFailure {
-      
-      ObjectList objectList = null;
-        try {
-        	if (count == null || count > MAXIMUM_DB_RECORD_COUNT) {
-            	count = MAXIMUM_DB_RECORD_COUNT;
-            }
-            objectList = IdentifierManager.getInstance().querySystemMetadata(startTime, endTime, formatid, replicaStatus, start, count);
-        } catch (Exception e) {
-            throw new ServiceFailure("1580", "Error querying system metadata: " + e.getMessage());
-        }
 
-        return objectList;
+      return super.listObjects(session, startTime, endTime, formatid, identifier, nodeId, start, count);
   }
 
   
@@ -1808,7 +2180,7 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
       
       Session session = null;
       List<Replica> replicaList = currentSystemMetadata.getReplicaList();
-      MNode mn = null;
+      //MNode mn = null;
       NodeReference replicaNodeRef = null;
       CNode cn = null;
       NodeType nodeType = null;
@@ -1830,7 +2202,7 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
           
           // iterate through the replicas and inform  MN replica nodes
           for (Replica replica : replicaList) {
-              
+              String replicationVersion = null;
               replicaNodeRef = replica.getReplicaMemberNode();
               try {
                   if (nodeList != null) {
@@ -1838,6 +2210,8 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
                       for (Node node : nodeList) {
                           if ( node.getIdentifier().getValue().equals(replicaNodeRef.getValue()) ) {
                               nodeType = node.getType();
+                              D1NodeVersionChecker checker = new D1NodeVersionChecker(replicaNodeRef);
+                              replicationVersion = checker.getVersion("MNRead");
                               break;
               
                           }
@@ -1845,12 +2219,23 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
                   }
               
                   // notify only MNs
-                  if (nodeType != null && nodeType == NodeType.MN) {
-                      mn = D1Client.getMN(replicaNodeRef);
-                      mn.systemMetadataChanged(session, 
-                          currentSystemMetadata.getIdentifier(), 
-                          currentSystemMetadata.getSerialVersion().longValue(),
-                          currentSystemMetadata.getDateSysMetadataModified());
+                  if (replicationVersion != null && nodeType != null && nodeType == NodeType.MN) {
+                      if(replicationVersion.equalsIgnoreCase(D1NodeVersionChecker.V2)) {
+                          //connect to a v2 mn
+                          MNode mn = D1Client.getMN(replicaNodeRef);
+                          mn.systemMetadataChanged(session, 
+                              currentSystemMetadata.getIdentifier(), 
+                              currentSystemMetadata.getSerialVersion().longValue(),
+                              currentSystemMetadata.getDateSysMetadataModified());
+                      } else if (replicationVersion.equalsIgnoreCase(D1NodeVersionChecker.V1)) {
+                          //connect to a v1 mn
+                          org.dataone.client.v1.MNode mn = org.dataone.client.v1.itk.D1Client.getMN(replicaNodeRef);
+                          mn.systemMetadataChanged(session, 
+                                  currentSystemMetadata.getIdentifier(), 
+                                  currentSystemMetadata.getSerialVersion().longValue(),
+                                  currentSystemMetadata.getDateSysMetadataModified());
+                      }
+                      
                   }
               
               } catch (Exception e) { // handle BaseException and other I/O issues
@@ -1866,205 +2251,89 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
           }
       }
   }
-
-	@Override
-	public boolean isAuthorized(Identifier pid, Permission permission)
-			throws ServiceFailure, InvalidToken, NotFound, NotAuthorized,
-			NotImplemented, InvalidRequest {
-		
-		return isAuthorized(null, pid, permission);
-	}
-	
-	@Override
-	public boolean setAccessPolicy(Identifier pid, AccessPolicy accessPolicy, long serialVersion)
-			throws InvalidToken, NotFound, NotImplemented, NotAuthorized,
-			ServiceFailure, InvalidRequest, VersionMismatch {
-		
-		return setAccessPolicy(null, pid, accessPolicy, serialVersion);
-	}
-	
-	@Override
-	public Identifier setRightsHolder(Identifier pid, Subject userId, long serialVersion)
-			throws InvalidToken, ServiceFailure, NotFound, NotAuthorized,
-			NotImplemented, InvalidRequest, VersionMismatch {
-		
-		return setRightsHolder(null, pid, userId, serialVersion);
-	}
-	
-	@Override
-	public Identifier create(Identifier pid, InputStream object, SystemMetadata sysmeta)
-			throws InvalidToken, ServiceFailure, NotAuthorized,
-			IdentifierNotUnique, UnsupportedType, InsufficientResources,
-			InvalidSystemMetadata, NotImplemented, InvalidRequest {
-
-		return create(null, pid, object, sysmeta);
-	}
-	
-	@Override
-	public Identifier delete(Identifier pid) throws InvalidToken, ServiceFailure,
-			NotAuthorized, NotFound, NotImplemented {
-
-		return delete(null, pid);
-	}
-	
-	@Override
-	public Identifier generateIdentifier(String scheme, String fragment)
-			throws InvalidToken, ServiceFailure, NotAuthorized, NotImplemented,
-			InvalidRequest {
-
-		return generateIdentifier(null, scheme, fragment);
-	}
-	
-	@Override
-	public Log getLogRecords(Date fromDate, Date toDate, Event event, String pidFilter,
-			Integer start, Integer count) throws InvalidToken, InvalidRequest,
-			ServiceFailure, NotAuthorized, NotImplemented, InsufficientResources {
-
-		return getLogRecords(null, fromDate, toDate, event, pidFilter, start, count);
-	}
-	
-	@Override
-	public boolean hasReservation(Subject subject, Identifier pid)
-			throws InvalidToken, ServiceFailure, NotFound, NotAuthorized,
-			NotImplemented, InvalidRequest, IdentifierNotUnique {
-
-		return hasReservation(null, subject, pid);
-	}
-	
-	@Override
-	public Identifier registerSystemMetadata(Identifier pid, SystemMetadata sysmeta)
-			throws NotImplemented, NotAuthorized, ServiceFailure, InvalidRequest,
-			InvalidSystemMetadata, InvalidToken {
-
-		return registerSystemMetadata(null, pid, sysmeta);
-	}
-	
-	@Override
-	public Identifier reserveIdentifier(Identifier pid) throws InvalidToken,
-			ServiceFailure, NotAuthorized, IdentifierNotUnique, NotImplemented,
-			InvalidRequest {
-
-		return reserveIdentifier(null, pid);
-	}
-	
-	@Override
-	public boolean setObsoletedBy(Identifier pid, Identifier obsoletedByPid, long serialVersion)
-			throws NotImplemented, NotFound, NotAuthorized, ServiceFailure,
-			InvalidRequest, InvalidToken, VersionMismatch {
-
-		return setObsoletedBy(null, pid, obsoletedByPid, serialVersion);
-	}
-	
-	@Override
-	public DescribeResponse describe(Identifier pid) throws InvalidToken,
-			NotAuthorized, NotImplemented, ServiceFailure, NotFound {
-
-		return describe(null, pid);
-	}
-	
-	@Override
-	public InputStream get(Identifier pid) throws InvalidToken, ServiceFailure,
-			NotAuthorized, NotFound, NotImplemented {
-
-		return get(null, pid);
-	}
-	
-	@Override
-	public Checksum getChecksum(Identifier pid) throws InvalidToken,
-			ServiceFailure, NotAuthorized, NotFound, NotImplemented {
-
-		return getChecksum(null, pid);
-	}
-	
-	@Override
-	public SystemMetadata getSystemMetadata(Identifier pid) throws InvalidToken,
-			ServiceFailure, NotAuthorized, NotFound, NotImplemented {
-
-		return getSystemMetadata(null, pid);
-	}
-	
-	@Override
-	public ObjectList listObjects(Date startTime, Date endTime,
-			ObjectFormatIdentifier formatid, Boolean replicaStatus, Integer start, Integer count)
-			throws InvalidRequest, InvalidToken, NotAuthorized, NotImplemented,
-			ServiceFailure {
-
-		return listObjects(null, startTime, endTime, formatid, replicaStatus, start, count);
-	}
-	
-	@Override
-	public ObjectLocationList resolve(Identifier pid) throws InvalidToken,
-			ServiceFailure, NotAuthorized, NotFound, NotImplemented {
-
-		return resolve(null, pid);
-	}
-	
-	@Override
-	public ObjectList search(String queryType, String query) throws InvalidToken,
-			ServiceFailure, NotAuthorized, InvalidRequest, NotImplemented {
-
-		return search(null, queryType, query);
-	}
-	
-	@Override
-	public boolean deleteReplicationMetadata(Identifier pid, NodeReference nodeId,
-			long serialVersion) throws InvalidToken, InvalidRequest, ServiceFailure,
-			NotAuthorized, NotFound, NotImplemented, VersionMismatch {
-
-		return deleteReplicationMetadata(null, pid, nodeId, serialVersion);
-	}
-	
-	@Override
-	public boolean isNodeAuthorized(Subject targetNodeSubject, Identifier pid)
-			throws NotImplemented, NotAuthorized, InvalidToken, ServiceFailure,
-			NotFound, InvalidRequest {
-
-		return isNodeAuthorized(null, targetNodeSubject, pid);
-	}
-	
-	@Override
-	public boolean setReplicationPolicy(Identifier pid, ReplicationPolicy policy,
-			long serialVersion) throws NotImplemented, NotFound, NotAuthorized,
-			ServiceFailure, InvalidRequest, InvalidToken, VersionMismatch {
-
-		return setReplicationPolicy(null, pid, policy, serialVersion);
-	}
-	
-	@Override
-	public boolean setReplicationStatus(Identifier pid, NodeReference targetNode,
-			ReplicationStatus status, BaseException failure) throws ServiceFailure,
-			NotImplemented, InvalidToken, NotAuthorized, InvalidRequest, NotFound {
-
-		return setReplicationStatus(null, pid, targetNode, status, failure);
-	}
-	
-	@Override
-	public boolean updateReplicationMetadata(Identifier pid, Replica replica,
-			long serialVersion) throws NotImplemented, NotAuthorized, ServiceFailure,
-			NotFound, InvalidRequest, InvalidToken, VersionMismatch {
-
-		return updateReplicationMetadata(null, pid, replica, serialVersion);
-	}
-
+  
+  /**
+   * Update the system metadata of the specified pid.
+   * Note: the serial version and the replica list in the new system metadata will be ignored and the old values will be kept.
+   */
   @Override
-  public QueryEngineDescription getQueryEngineDescription(String arg0)
-          throws InvalidToken, ServiceFailure, NotAuthorized, NotImplemented,
-          NotFound {
-      throw new NotImplemented("4410", "getQueryEngineDescription not implemented");
-      
-  }
+  public boolean updateSystemMetadata(Session session, Identifier pid,
+          SystemMetadata sysmeta) throws NotImplemented, NotAuthorized,
+          ServiceFailure, InvalidRequest, InvalidSystemMetadata, InvalidToken {
+   if(sysmeta == null) {
+       throw  new InvalidRequest("4863", "The system metadata object should NOT be null in the updateSystemMetadata request.");
+   }
+   if(pid == null || pid.getValue() == null) {
+       throw new InvalidRequest("4863", "Please specify the id in the updateSystemMetadata request ") ;
+   }
 
-  @Override
-  public QueryEngineList listQueryEngines() throws InvalidToken, ServiceFailure,
-          NotAuthorized, NotImplemented {
-      throw new NotImplemented("4420", "listQueryEngines not implemented");
-      
-  }
+   if (session == null) {
+       //TODO: many of the thrown exceptions do not use the correct error codes
+       //check these against the docs and correct them
+       throw new NotAuthorized("4861", "No Session - could not authorize for updating system metadata." +
+               "  If you are not logged in, please do so and retry the request.");
+   } else {
+         //only CN is allwoed
+         if(!isCNAdmin(session)) {
+               throw new NotAuthorized("4861", "The client -"+ session.getSubject().getValue()+ "is not authorized for updating the system metadata of the object "+pid.getValue());
+         }
+   }
 
-  @Override
-  public InputStream query(String arg0, String arg1) throws InvalidToken,
-          ServiceFailure, NotAuthorized, InvalidRequest, NotImplemented, NotFound {
-      throw new NotImplemented("4324", "query not implemented");
-      
+    //update the system metadata locally
+    boolean success = false;
+    try {
+        HazelcastService.getInstance().getSystemMetadataMap().lock(pid);
+        SystemMetadata currentSysmeta = HazelcastService.getInstance().getSystemMetadataMap().get(pid);
+       
+        if(currentSysmeta == null) {
+            throw  new InvalidRequest("4863", "We can't find the current system metadata on the member node for the id "+pid.getValue());
+        }
+        // CN will ignore the comming serial version and replica list fields from the mn node. 
+        BigInteger currentSerialVersion = currentSysmeta.getSerialVersion();
+        sysmeta.setSerialVersion(currentSerialVersion);
+        List<Replica> replicas = currentSysmeta.getReplicaList();
+        sysmeta.setReplicaList(replicas);
+        boolean needUpdateModificationDate = false;//cn doesn't need to change the modification date.
+        boolean fromCN = true;
+        success = updateSystemMetadata(session, pid, sysmeta, needUpdateModificationDate, currentSysmeta, fromCN);
+    } finally {
+        HazelcastService.getInstance().getSystemMetadataMap().unlock(pid);
+    }
+    return success;
   }
+  
+    @Override
+    public boolean synchronize(Session session, Identifier pid) throws NotAuthorized, InvalidRequest, NotImplemented{
+        throw new NotImplemented("0000", "CN query services are not implemented in Metacat.");
+
+    }
+
+	@Override
+	public QueryEngineDescription getQueryEngineDescription(Session session,
+			String queryEngine) throws InvalidToken, ServiceFailure, NotAuthorized,
+			NotImplemented, NotFound {
+		throw new NotImplemented("0000", "CN query services are not implemented in Metacat.");
+
+	}
+	
+	@Override
+	public QueryEngineList listQueryEngines(Session session) throws InvalidToken,
+			ServiceFailure, NotAuthorized, NotImplemented {
+		throw new NotImplemented("0000", "CN query services are not implemented in Metacat.");
+
+	}
+	
+	@Override
+	public InputStream query(Session session, String queryEngine, String query)
+			throws InvalidToken, ServiceFailure, NotAuthorized, InvalidRequest,
+			NotImplemented, NotFound {
+		throw new NotImplemented("0000", "CN query services are not implemented in Metacat.");
+
+	}
+	
+	@Override
+	public Node getCapabilities() throws NotImplemented, ServiceFailure {
+		throw new NotImplemented("0000", "The CN capabilities are not stored in Metacat.");
+	}
+
 }

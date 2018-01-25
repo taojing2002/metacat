@@ -299,6 +299,7 @@ CREATE INDEX identifier_docid_rev_log ON identifier((docid||'.'||rev));
  */
 CREATE TABLE systemMetadata (
 	guid   text,          -- the globally unique string identifier of the object that the system metadata describes
+	series_id text, -- the series identifier
 	serial_version VARCHAR(256), --the serial version of the object
 	date_uploaded TIMESTAMP, -- the date/time the document was first submitted
 	rights_holder VARCHAR(250), --the user who has rights to the document, usually the first persons to upload it
@@ -315,7 +316,22 @@ CREATE TABLE systemMetadata (
 	number_replicas INT8, 	-- the number of replicas allowed
 	obsoletes   text,       -- the identifier that this record obsoletes
 	obsoleted_by   text,     -- the identifier of the record that replaces this record
+  media_type   text,      -- the media type of this object
+  file_name    text,      -- the suggested file name for this object
 	CONSTRAINT systemMetadata_pk PRIMARY KEY (guid)
+);
+
+/*
+ * Table used to store the properties for media types. They are part of the system metadata. But a media type
+ * can have multiple properties, we have to store them in a separate table. The guids in this table refer
+ * the guids in the systemMetadata.
+ */
+CREATE TABLE smMediaTypeProperties (
+	guid    text,  -- id refer to guid in the system metadata table
+  name    text, -- name of the property
+  value    text, -- value of the property
+  CONSTRAINT smMediaTypeProperties_fk 
+     FOREIGN KEY (guid) REFERENCES systemMetadata DEFERRABLE
 );
 /*
  * For devs to remove docid, rev

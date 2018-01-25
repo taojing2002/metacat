@@ -29,6 +29,17 @@ DAYSTOKEEP=7
 # Device to be used for the DVD writer -- this may vary on your system
 DVD=/dev/dvd
 
+# Location of the metacat.properties file
+METACATPROPERTIESPATH=/var/lib/tomcat6/webapps/knb/WEB-INF/metacat.properties
+
+# Location of the apache configuration file
+APACHECONF=/etc/apache2/sites-enabled
+
+#Location of the server key
+KEYLOCATION=/etc/ssl/private 
+
+#Location of the server certificate
+CERTLOCATION=/etc/ssl/certs/_.test.dataone.org.crt
 #
 # Below here lie demons
 #
@@ -49,40 +60,46 @@ ARCHDIR="$ARCHROOT/$ARCHNAME"
 mkdir $ARCHDIR
 
 # Shut down the tomcat server so nobody else changes anything while we backup
-/etc/init.d/tomcat stop
+/etc/init.d/tomcat6 stop
 
 # Shut down ldap too
-/etc/init.d/slapd stop
+#/etc/init.d/slapd stop
+
+# Copy the metacat.properties file to /var/metacat
+cp $METACATPROPERTIESPATH $DATADIR
 
 # Backup postgres
-su - postgres -c "pg_dump $DBNAME > $ARCHDIR/metacat-postgres-backup.sql"
+su - postgres -c "pg_dumpall | gzip > $ARCHDIR/metacat-postgres-backup.gz"
 
 # Backup the data files
-tar czf $ARCHDIR/datafiles-backup.tgz --exclude=$ARCHROOT $DATADIR
+tar czhf $ARCHDIR/datafiles-backup.tgz --exclude=$ARCHROOT $DATADIR
+
+# Backup the apache configuration files
+tar czhf $ARCHDIR/apache-config-backup.tgz $APACHECONF $KEYLOCATION $CERTLOCATION
 
 # Backup LDAP to an LDIF file
-slapcat -l $ARCHDIR/$DBNAME-ldap.ldif
+#slapcat -l $ARCHDIR/$DBNAME-ldap.ldif
 
 # Restart LDAP
-/etc/init.d/slapd start
+#/etc/init.d/slapd start
 
 # Restart tomcat
-/etc/init.d/tomcat start
+/etc/init.d/tomcat6 start
 
 # Tar up the archive and copy it to archive media
 cd $ARCHROOT
-tar czf $ARCHDIR.tgz $ARCHNAME
+tar czhf $ARCHDIR.tgz $ARCHNAME
 
 # Clean up the temp files
 rm -rf $ARCHDIR
 
 # Write the backup file to DVD
-DAY=`date +%u`
-DVDFLAG=-M
-if [ $DAY == $SWAPDAY ] ; then
-  DVDFLAG=-Z
-fi
-growisofs $DVDFLAG $DVD -R -J $ARCHDIR.tgz
+#DAY=`date +%u`
+#DVDFLAG=-M
+#if [ $DAY == $SWAPDAY ] ; then
+  #DVDFLAG=-Z
+#fi
+#growisofs $DVDFLAG $DVD -R -J $ARCHDIR.tgz
 
 # clean up any of the backup files that are older than DAYSTOKEEP
 find $ARCHROOT -mtime +$DAYSTOKEEP -exec rm -f {} \;

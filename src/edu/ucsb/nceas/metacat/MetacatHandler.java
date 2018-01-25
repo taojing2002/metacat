@@ -67,22 +67,21 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
+import org.apache.commons.fileupload.FileItem;
+import org.apache.commons.fileupload.disk.DiskFileItemFactory;
+import org.apache.commons.fileupload.servlet.ServletFileUpload;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.input.XmlStreamReader;
+import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.log4j.Logger;
 import org.dataone.service.types.v1.AccessPolicy;
 import org.dataone.service.types.v1.Event;
 import org.dataone.service.types.v1.Identifier;
 import org.dataone.service.types.v1.Session;
-import org.dataone.service.types.v1.SystemMetadata;
+import org.dataone.service.types.v2.SystemMetadata;
 import org.ecoinformatics.eml.EMLParser;
 
 import au.com.bytecode.opencsv.CSVWriter;
-
-import com.oreilly.servlet.multipart.FilePart;
-import com.oreilly.servlet.multipart.MultipartParser;
-import com.oreilly.servlet.multipart.ParamPart;
-import com.oreilly.servlet.multipart.Part;
 
 import edu.ucsb.nceas.metacat.accesscontrol.AccessControlException;
 import edu.ucsb.nceas.metacat.accesscontrol.AccessControlForSingleFile;
@@ -1839,9 +1838,9 @@ public class MetacatHandler {
                   
                   // handle inserts
                   try {
-                	// create the system metadata. During the creatation, the data file in the eml may need to be reindexed.
-                    boolean reindexDataObject = true;
-                    sysMeta = SystemMetadataFactory.createSystemMetadata(reindexDataObject, newdocid, true, false);
+                   // create the system metadata. During the creatation, the data file in the eml may need to be reindexed.
+                   boolean reindexDataObject = true;
+                   sysMeta = SystemMetadataFactory.createSystemMetadata(reindexDataObject, newdocid, true, false);
                     
                     // save it to the map
                     HazelcastService.getInstance().getSystemMetadataMap().put(sysMeta.getIdentifier(), sysMeta);
@@ -2058,9 +2057,21 @@ public class MetacatHandler {
               "Document could not be deleted: "
                     + dnfe.getMessage());
             dnfe.printStackTrace(System.out);
-            
+            return;
           } // end try()
-          
+        
+        } catch (SQLException sqle) {
+            response.setContentType("text/xml");
+            out.println(this.PROLOG);
+            out.println(this.ERROR);
+            //out.println("Error deleting document!!!");
+            out.println(sqle.getMessage());
+            out.println(this.ERRORCLOSE);
+            logMetacat.error("MetacatHandler.handleDeleteAction - " +
+              "Document could not be deleted: "
+                    + sqle.getMessage());
+            sqle.printStackTrace(System.out);
+            return;
         } // end try()
         
         // alert that it happened
@@ -2101,7 +2112,7 @@ public class MetacatHandler {
                 
             } catch (NullPointerException npe) {
                 
-                out.println("<error>Error getting document ID: " + docid
+                out.println("<error>Error getting document ID: " + StringEscapeUtils.escapeXml(docid)
                         + "</error>");
                 //if ( conn != null ) { util.returnConnection(conn); }
                 return;
@@ -2358,7 +2369,7 @@ public class MetacatHandler {
         
         out.println("<?xml version=\"1.0\"?>");
         out.println("<isRegistered>");
-        out.println("<docid>" + id + "</docid>");
+        out.println("<docid>" + StringEscapeUtils.escapeXml(id) + "</docid>");
         out.println("<exists>" + exists + "</exists>");
         out.println("</isRegistered>");
     }
@@ -2378,7 +2389,7 @@ public class MetacatHandler {
             Vector<String> docids = DBUtil.getAllDocids(scope);
             out.println("<?xml version=\"1.0\"?>");
             out.println("<idList>");
-            out.println("  <scope>" + scope + "</scope>");
+            out.println("  <scope>" + StringEscapeUtils.escapeXml(scope) + "</scope>");
             for(int i=0; i<docids.size(); i++) {
                 String docid = docids.elementAt(i);
                 out.println("  <docid>" + docid + "</docid>");
@@ -2411,7 +2422,7 @@ public class MetacatHandler {
             String lastDocid = dbutil.getMaxDocid(scope);
             out.println("<?xml version=\"1.0\"?>");
             out.println("<lastDocid>");
-            out.println("  <scope>" + scope + "</scope>");
+            out.println("  <scope>" + StringEscapeUtils.escapeXml(scope) + "</scope>");
             out.println("  <docid>" + lastDocid + "</docid>");
             out.println("</lastDocid>");
             
@@ -2655,24 +2666,35 @@ public class MetacatHandler {
             response.setContentType("text/xml");
             out = response.getWriter();
             
-            // Check that the user is authenticated as an administrator account
-            if (!AuthUtil.isAdministrator(username, groups)) {
-                out.print("<error>");
-                out.print("The user \"" + username +
-                        "\" is not authorized for this action.");
-                out.print("</error>");
-                out.close();
-                return;
-            }
-            
-           
             if (pid == null || pid.length == 0) {
                 //report the error
                 results = new StringBuffer();
                 results.append("<error>");
                 results.append("The parameter - pid is missing. Please check your parameter list.");
                 results.append("</error>");
-            } else {
+                //out.close(); it will be closed in the finally statement
+                return;
+            }
+            // TODO: Check that the user is allowed to reindex this object, allow everyone for open annotations
+            boolean isAuthorized = true;
+   			String docid = IdentifierManager.getInstance().getLocalId(pid[0]);
+			isAuthorized = DocumentImpl.hasWritePermission(username, groups, docid);
+			if(!isAuthorized) {
+			    isAuthorized = AuthUtil.isAdministrator(username, groups);
+			}
+			
+
+            if (!isAuthorized) {
+                results.append("<error>");
+                results.append("The user \"" + username +
+                        "\" is not authorized for this action.");
+                results.append("</error>");
+                //out.close(); it will be closed in the finally statement
+                return;
+            }
+            
+           
+            
                 Vector<String> successList = new Vector<String>();
                 Vector<String> failedList = new Vector<String>();
                 
@@ -2717,19 +2739,18 @@ public class MetacatHandler {
                     results.append("</error>");
                 }
                 results.append("</results>\n");
-            }
-        } catch (IOException e) {
-            logMetacat.error("MetacatHandler.handleBuildIndexAction - " +
-            		         "Could not open http response for writing: " + 
+            
+        } catch (Exception e) {
+            logMetacat.error("MetacatHandler.handleReindex action - " +
             		         e.getMessage());
             e.printStackTrace();
-        } catch (MetacatUtilException ue) {
-            logMetacat.error("MetacatHandler.handleBuildIndexAction - " +
-            		         "Could not determine if user is administrator: " + 
-            		         ue.getMessage());
-            ue.printStackTrace();
+            results.append("<error>");
+            results.append("There was an error - "+e.getMessage());
+            results.append("</error>");
         } finally {
+            logMetacat.debug("================= in the finally statement");
             if(out != null) {
+                logMetacat.debug("================= in the finally statement which out is not null");
                 out.print(results.toString());
                 out.close();
             }
@@ -2840,7 +2861,7 @@ public class MetacatHandler {
         try {
             DocumentImpl doc = new DocumentImpl(docid, false);
             doc.buildIndex();
-            out.print("<docid>" + docid);
+            out.print("<docid>" + StringEscapeUtils.escapeXml(docid));
             out.println("</docid>");
         } catch (McdbException me) {
             out.print("<error>");
@@ -2867,6 +2888,7 @@ public class MetacatHandler {
         Hashtable<String,String[]> params = new Hashtable<String,String[]>();
         Hashtable<String,String> fileList = new Hashtable<String,String>();
         int sizeLimit = 1000;
+        String tmpDir = "/tmp";
         try {
             sizeLimit = 
                 (new Integer(PropertyService.getProperty("replication.datafilesizelimit"))).intValue();
@@ -2876,43 +2898,59 @@ public class MetacatHandler {
             		         pnfe.getMessage());
             pnfe.printStackTrace(System.out);
         }
+        try {
+            tmpDir = PropertyService.getProperty("application.tempDir");
+        } catch (PropertyNotFoundException pnfe) {
+            logMetacat.error("MetacatHandler.handleMultipartForm - " +
+            		         "Could not determine temp dir, using default. " + 
+            		         pnfe.getMessage());
+            pnfe.printStackTrace(System.out);
+        }
         logMetacat.debug("MetacatHandler.handleMultipartForm - " +
         		         "The size limit of uploaded data files is: " + 
         		         sizeLimit);
         
         try {
-            MultipartParser mp = new MultipartParser(request,
-                    sizeLimit * 1024 * 1024);
-            Part part;
-            
-            while ((part = mp.readNextPart()) != null) {
-                String name = part.getName();
-                
-                if (part.isParam()) {
+        	boolean isMultipart = ServletFileUpload.isMultipartContent(request);
+        	// Create a factory for disk-based file items
+        	DiskFileItemFactory factory = new DiskFileItemFactory();
+
+        	// Configure a repository (to ensure a secure temp location is used)
+        	File repository = new File(tmpDir);
+        	factory.setRepository(repository);
+
+        	// Create a new file upload handler
+        	ServletFileUpload upload = new ServletFileUpload(factory);
+
+        	// Parse the request
+        	List<FileItem> items = upload.parseRequest(request);
+        	
+        	Iterator<FileItem> iter = items.iterator();
+        	while (iter.hasNext()) {
+        		FileItem item = iter.next();
+        		String name = item.getFieldName();
+        		
+        	    if (item.isFormField()) {
+        	    	
                     // it's a parameter part
-                    ParamPart paramPart = (ParamPart) part;
                     String[] values = new String[1];
-                    values[0] = paramPart.getStringValue();
+                    values[0] = item.getString();
                     params.put(name, values);
                     if (name.equals("action")) {
                         action = values[0];
                     }
-                } else if (part.isFile()) {
+                } else {
                     // it's a file part
-                    FilePart filePart = (FilePart) part;
-                    String fileName = filePart.getFileName();
-                    
-                    // the filePart will be clobbered on the next loop, save to disk
-                    tempFile = MetacatUtil.writeTempUploadFile(filePart, fileName);
+                    String fileName = item.getName();                    
+
+                    // write to disk
+                    tempFile = MetacatUtil.writeTempUploadFile(item, fileName);
                     fileList.put(name, tempFile.getAbsolutePath());
                     fileList.put("filename", fileName);
                     fileList.put("name", tempFile.getAbsolutePath());
-                } else {
-                    logMetacat.info("MetacatHandler.handleMultipartForm - " +
-                    		        "Upload name '" + name + "' was empty.");
                 }
             }
-        } catch (IOException ioe) {
+        } catch (Exception ioe) {
             try {
                 out = response.getWriter();
             } catch (IOException ioe2) {
@@ -2970,7 +3008,8 @@ public class MetacatHandler {
             } else {                
                 out.println("<?xml version=\"1.0\"?>");
                 out.println("<error>");
-                out.println("Permission denied for " + action);
+                
+                out.println("Permission denied for upload action");
                 out.println("</error>");
             }
         } else if(action.equals("insertmultipart")) {
@@ -2981,7 +3020,7 @@ public class MetacatHandler {
           } else {
               out.println("<?xml version=\"1.0\"?>");
               out.println("<error>");
-              out.println("Permission denied for " + action);
+              out.println("Permission denied for insertmultipart action");
               out.println("</error>");
           }
         } else {
@@ -3045,7 +3084,8 @@ public class MetacatHandler {
                           "The docid "+docid +" is not valid since it is null or contians the white space(s).");
           if (qformat == null || qformat.equals("xml")) {
               response.setContentType("text/xml");
-              out.println(output);
+              String cleanMessage = StringEscapeUtils.escapeXml(output);
+              out.println(cleanMessage);
           } else {
               try {
                   DBTransform trans = new DBTransform();

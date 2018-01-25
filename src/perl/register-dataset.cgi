@@ -42,6 +42,8 @@ use Digest::SHA1;
 use File::stat;
 use File::Basename;
 use File::Temp;
+use File::Copy;
+use Fcntl qw(:flock);
 use strict;
 
 #debug("running register-dataset.cgi");
@@ -68,6 +70,7 @@ my $skinsDir     = "${workingDirectory}/../style/skins";
 my $templatesDir = abs_path("${workingDirectory}/../style/common/templates");
 my $tempDir      = $properties->getProperty('application.tempDir');
 my $dataDir      = $properties->getProperty('application.datafilepath');
+my $metacatDir   = "/var/metacat";
 
 # url configuration
 my $server = $properties->splitToTree( qr/\./, 'server' );
@@ -444,6 +447,11 @@ if ( !$error ) {
 }
 
 my $docid;
+my $scope = $FORM::scope;
+
+if(($scope eq "") || (!$scope)){
+    $scope = $config->{'scope'};
+}
 
 # Create a metacat object
 my $metacat = Metacat->new($metacatUrl);
@@ -454,10 +462,10 @@ if ( !$error ) {
 	my ( $username, $password ) = getCredentials();
 	my $response = $metacat->login( $username, $password );
 	my $errorMessage = "";
-
+    
 	# Parameters have been validated and Create the XML document
 	my $xmldoc = createXMLDocument();
-
+    
 	my $xmldocWithDocID = $xmldoc;
 	my $errorMessage    = "";
 
@@ -499,24 +507,32 @@ if ( !$error ) {
 
 			# document is being inserted
 			my $docStatus = "INCOMPLETE";
-			while ( $docStatus eq "INCOMPLETE" ) {
-				$docid = newAccessionNumber( $config->{'scope'}, $metacat );
-
-				$xmldocWithDocID =~ s/docid/$docid/;
-				debugDoc($xmldocWithDocID);
-				$docStatus = insertMetadata( $xmldocWithDocID, $docid );
+            
+			while ($docStatus eq "INCOMPLETE") {
+                                
+                #Create the docid
+                $docid = newDocid($scope, $metacat);
+                                                    
+                $xmldocWithDocID =~ s/docid/$docid/;
+                debugDoc($xmldocWithDocID);
+                $docStatus = insertMetadata( $xmldocWithDocID, $docid );
+                               
+                debug("B2");
+                
 			}
-			debug("B2");
-			if ( $docStatus ne "SUCCESS" ) {
-				debug("NO SUCCESS");
-				debug("Message is: $docStatus");
-				push( @errorMessages, $docStatus );
-			}
-			else {
-				deleteRemovedData();
-			}
-
-			debug("B3");
+                        
+            debug("B3");
+            
+            if ( $docStatus ne "SUCCESS" ) {
+                debug("NO SUCCESS");
+                debug("Message is: $docStatus");
+                
+                push( @errorMessages, $docStatus );
+            }
+            else{
+                deleteRemovedData();
+            }
+            
 		}
 		else {
 			debug("M1");
@@ -646,6 +662,7 @@ if ( !$error ) {
 		modSendNotification( $title, $contactEmailAddress, $contactName,
 			"Document $docid review pending" );
 	}
+    
 }
 
 debug("C");
@@ -697,7 +714,7 @@ sub insertMetadata {
 	if ( !$response ) {
 		debug("Response gotten (D2)");
 		my $errormsg = $metacat->getMessage();
-		i debug( "Error is (D3): " . $errormsg );
+		debug( "Error is (D3): " . $errormsg );
 		if ( $errormsg =~ /is already in use/ ) {
 			$docStatus = "INCOMPLETE";
 		}
@@ -738,6 +755,76 @@ sub newAccessionNumber {
 	return $docid;
 }
 
+
+################################################################################
+#
+# Subroutine for generating a new docid
+# Checks a local file for the max id # in use for this scope. After several tries,
+# checks metacat using newAccessionNumber
+################################################################################
+sub newDocid {
+    
+    my $scope   = shift;
+    my $metacat = shift;
+    my $scopeFound = 0;
+    
+    #Lock a local file while we are creating a new docid
+    my $lockFilePath = "docids.lock";
+    open(LOCK, ">$lockFilePath");
+    flock(LOCK, LOCK_EX);
+    
+    my $lastdocid = newAccessionNumber($scope, $metacat);
+    #Extract the docid number from the docid
+    my @line = split(/\./, $lastdocid);
+    my $num = $line[1];
+    
+    my $docidsFilePath    = $tempDir."/docids.txt";
+    my $docidsFilePathNew = $tempDir."/docids.txt.new";
+    
+    #Open/create a local file while we are creating a new docid
+    open my $docidsFile,  '+<',  $docidsFilePath;
+    open my $docidsNewFile, '>', $docidsFilePathNew;
+    
+    #Read each docid scope,num in the file
+    while( <$docidsFile> ) {
+        my @line = split /,/;
+        my $currentScope = $line[0];
+        
+        if($currentScope eq $scope){
+            
+            my $docidNum = $line[1] + 1;
+            
+            if($num > $docidNum){
+              $docid = "$scope.$num.1";
+              print $docidsNewFile "$scope,$num \n";
+            }
+            else{
+              $docid = "$scope.$docidNum.1";
+              print $docidsNewFile "$scope,$docidNum \n";
+            }
+
+            $scopeFound = 1;
+        }
+        else{
+            print $docidsNewFile $_;
+        }
+    }
+    
+    #If this scope is not in the local docid store then add it
+    if(!$scopeFound){
+        #Add to the local file
+        print $docidsNewFile "$scope,$num \n";
+    }
+    
+    #Close the file and replace the old docids file with this new one
+    close $docidsNewFile;
+    close $docidsFile;
+    move($docidsFilePathNew, $docidsFilePath);
+    close LOCK;
+    
+    return $docid;
+}
+
 sub incrementRevision {
 	my $initDocid = shift;
 	my $docid     = '';
@@ -769,9 +856,11 @@ sub validateParameters {
 	  unless hasContent($FORM::providerSurName);
 	push( @invalidParams, "Dataset title is missing." )
 	  unless hasContent($FORM::title);
-	push( @invalidParams, ucfirst( $config->{'site'} ) . " name is missing." )
-	  unless ( ( hasContent($FORM::site) && !( $FORM::site =~ /^Select/ ) )
-		|| $skinName eq "nceas" );
+	if ( $show->{'siteList'} eq 'true' ) { 
+		push( @invalidParams, ucfirst( $config->{'site'} ) . " name is missing." )
+		  unless ( ( hasContent($FORM::site) && !( $FORM::site =~ /^Select/ ) )
+			|| $skinName eq "nceas" );
+	}
 	push( @invalidParams, "First name of principal data set owner is missing." )
 	  unless hasContent($FORM::origNamefirst0);
 	push( @invalidParams, "Last name of principal data set owner is missing." )
@@ -1171,21 +1260,22 @@ sub fileMetadata {
 	if ( $fileHash =~ /ondisk/ ) {
 		( $docid, $fileHash ) = datafileInfo($fileHash);
 		$outFile = $dataDir . "/" . $docid;
+        
 	}
 	else {
 
 		# normalize input filenames; Windows filenames include full paths
 		$cleanName =~ s/.*[\/\\](.*)/$1/;
-		$outFile = $tempDir . "/" . $cleanName;
+		$outFile = $tempDir . "/" . $cleanName;        
 	}
 	debug("Reading file from disk: $outFile");
-
+    
 	my $fileSize = stat($outFile)->size;
 	if ( $fileSize == 0 ) {
 		push( @errorMessages, "file $fileName is zero bytes!" );
 		debug("File $fileName is zero bytes!");
 	}
-
+    
 	# Now the file is on disk, send the object to Metacat
 	my $session = CGI::Session->load();
 	if ( $session->is_empty ) {
@@ -1197,13 +1287,22 @@ sub fileMetadata {
 	# remove the uniqueness of the filename
 	# 'tempXXXXX'
 	$cleanName = substr($cleanName, 9);
-	
+    	
 	if ( !$docid ) {
-		$docid = newAccessionNumber( $config->{'scope'}, $metacat );
-		my $uploadReturn = uploadData( $outFile, $docid, $cleanName );
-		if ( !$uploadReturn ) {
-			debug("Uploading the data failed.");
-		}
+                
+        my $uploadStatus = shift;
+        
+        while(!$uploadStatus){
+            
+            $docid = newDocid($scope, $metacat);
+            
+            $uploadStatus = uploadData( $outFile, $docid, $cleanName );
+                        
+            if ( !$uploadStatus ) {
+                debug("Uploading the data failed.");
+                push( @errorMessages, "Data file $cleanName failed to upload");
+            }
+        }
 	}
 	my $entityid  = $fileHash . "001";
 	my $distribid = $fileHash . "002";
@@ -1293,7 +1392,7 @@ sub writeFile {
 	my $ctx = Digest::SHA1->new;
 	$ctx->add($fileData);
 	my $digest = $ctx->hexdigest;
-
+    
 	# use tempfile for writing
 	my $tmp = File::Temp->new( 
 						TEMPLATE => 'tempXXXXX',
@@ -1305,7 +1404,7 @@ sub writeFile {
 	print $tmp $fileData;
 	close($tmp);
 	debug("Writing output, result is: $outputName");
-
+    
 	return ( $outputName, $digest );
 }
 
@@ -1395,14 +1494,19 @@ sub uploadData {
 	debug("Upload -- Starting upload of $docid");
 	my $response = $metacat->upload( $docid, $data, $filename );
 	if ( !$response ) {
-		my $uploadMsg = $metacat->getMessage();
-		push( @errorMessages,
-			"Failed to upload file. Error was: $uploadMsg\n" );
-		debug("Upload -- Error is: $uploadMsg");
+		
+        my $uploadMsg = $metacat->getMessage();
+		
+        push( @errorMessages,
+        		"Failed to upload file. Error was: $uploadMsg\n" );
+		
+        debug("Upload -- Error is: $uploadMsg");
 	}
 	else {
 		debug("Upload -- Success! New docid $docid");
 	}
+    
+    return $response;
 }
 
 ################################################################################
@@ -2311,6 +2415,7 @@ sub allowElement {
 
 sub getUsername() {
 	my $username = '';
+	my $authBase = $properties->getProperty("auth.base");
 
 	my $authBase = $properties->getProperty("auth.base");
 	if ( $FORM::username ne '' ) {
@@ -4844,10 +4949,16 @@ sub toConfirmData {
 	}
 
 	if ( !$error ) {
-
-		# If no errors, then print out data in confirm Data template
+        # If no errors, then print out data in confirm Data template
 		$$templateVars{'section'} = "Confirm Data";
-		$template->process( $templates->{'confirmData'}, $templateVars );
+        
+        #Just return the data file upload details, if specified
+        if(param("justGetUploadDetails")){
+            $template->process( $templates->{'dataUploadDetails'}, $templateVars );   
+        }
+        else{
+            $template->process( $templates->{'confirmData'}, $templateVars );
+        }
 
 	}
 	else {

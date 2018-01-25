@@ -31,18 +31,17 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.log4j.Logger;
-import org.dataone.client.CNode;
-import org.dataone.client.D1Client;
+import org.dataone.client.v2.CNode;
+import org.dataone.client.v2.itk.D1Client;
 import org.dataone.client.auth.CertificateManager;
+import org.dataone.configuration.Settings;
 import org.dataone.service.exceptions.BaseException;
-import org.dataone.service.types.v1.Node;
-import org.dataone.service.types.v1.NodeList;
+import org.dataone.service.types.v2.Node;
+import org.dataone.service.types.v2.NodeList;
 import org.dataone.service.types.v1.NodeReference;
 import org.dataone.service.types.v1.Session;
 
 import edu.ucsb.nceas.metacat.IdentifierManager;
-import edu.ucsb.nceas.metacat.admin.upgrade.dataone.GenerateORE;
-import edu.ucsb.nceas.metacat.admin.upgrade.dataone.GenerateSystemMetadata;
 import edu.ucsb.nceas.metacat.dataone.MNodeService;
 import edu.ucsb.nceas.metacat.properties.PropertyService;
 import edu.ucsb.nceas.metacat.shared.MetacatUtilException;
@@ -104,6 +103,7 @@ public class D1Admin extends MetacatAdmin {
 			try {
 				
 				// get the current configuration values
+				String cnURL = PropertyService.getProperty("D1Client.CN_URL");
 				String nodeName = PropertyService.getProperty("dataone.nodeName");
 				String nodeDescription = PropertyService.getProperty("dataone.nodeDescription");
 				String memberNodeId = PropertyService.getProperty("dataone.nodeId");
@@ -135,7 +135,7 @@ public class D1Admin extends MetacatAdmin {
 				if (nodeReplicate != null) {
 					replicate = Boolean.parseBoolean(nodeReplicate);
 				}
-				
+				request.setAttribute("D1Client.CN_URL", cnURL);
 				request.setAttribute("dataone.nodeName", nodeName);
 				request.setAttribute("dataone.nodeDescription", nodeDescription);
 				request.setAttribute("dataone.nodeId", memberNodeId);
@@ -246,6 +246,7 @@ public class D1Admin extends MetacatAdmin {
 				// and preserve their entries.
 				validationErrors.addAll(validateOptions(request));
 				
+				String cnURL = (String)request.getParameter("D1Client.CN_URL");
 				String nodeName = (String)request.getParameter("dataone.nodeName");
 				String nodeDescription = (String)request.getParameter("dataone.nodeDescription");
 				String memberNodeId = (String)request.getParameter("dataone.nodeId");
@@ -290,6 +291,8 @@ public class D1Admin extends MetacatAdmin {
 					validationErrors.add("nodeName cannot be null");
 				} else {
 					
+					PropertyService.setProperty("D1Client.CN_URL", cnURL);
+					Settings.getConfiguration().setProperty("D1Client.CN_URL", cnURL);
 					PropertyService.setPropertyNoPersist("dataone.nodeName", nodeName);
 					PropertyService.setPropertyNoPersist("dataone.nodeDescription", nodeDescription);					
 					PropertyService.setPropertyNoPersist("dataone.nodeSynchronize", Boolean.toString(synchronize));
@@ -429,7 +432,7 @@ public class D1Admin extends MetacatAdmin {
         logMetacat.debug("Setting client certificate location.");
         String mnCertificatePath = PropertyService.getProperty("D1Client.certificate.file");
         CertificateManager.getInstance().setCertificateLocation(mnCertificatePath);
-        CNode cn = D1Client.getCN();
+        CNode cn = D1Client.getCN(PropertyService.getProperty("D1Client.CN_URL"));
         
         // check if this is new or an update
         boolean update = isNodeRegistered(node.getIdentifier().getValue());

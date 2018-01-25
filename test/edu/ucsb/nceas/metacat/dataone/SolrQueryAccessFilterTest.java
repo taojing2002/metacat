@@ -19,13 +19,13 @@ import junit.framework.Test;
 import junit.framework.TestSuite;
 
 import org.apache.http.HttpResponse;
-import org.dataone.client.D1Client;
-import org.dataone.client.D1RestClient;
-import org.dataone.client.MNode;
-import org.dataone.client.ObjectFormatCache;
-import org.dataone.client.RestClient;
+import org.dataone.client.v2.itk.D1Client;
+import org.dataone.client.v2.MNode;
+import org.dataone.client.v2.formats.ObjectFormatCache;
+import org.dataone.client.rest.RestClient;
 import org.dataone.client.auth.CertificateManager;
 import org.dataone.configuration.Settings;
+import org.dataone.service.exceptions.ServiceFailure;
 import org.dataone.service.types.v1.AccessPolicy;
 import org.dataone.service.types.v1.AccessRule;
 import org.dataone.service.types.v1.Identifier;
@@ -34,7 +34,7 @@ import org.dataone.service.types.v1.Person;
 import org.dataone.service.types.v1.Session;
 import org.dataone.service.types.v1.Subject;
 import org.dataone.service.types.v1.SubjectInfo;
-import org.dataone.service.types.v1.SystemMetadata;
+import org.dataone.service.types.v2.SystemMetadata;
 import org.dataone.service.util.Constants;
 import org.junit.Before;
 import org.w3c.dom.Document;
@@ -263,7 +263,7 @@ public class SolrQueryAccessFilterTest extends D1NodeServiceTest {
         assertTrue(title.equals(TITLE));
         
         //Use the libclient without the session, the user shouldn't query the document since its certificate is distrusted and it will be considered as the public.
-        org.dataone.service.types.v1.Node node = MNodeService.getInstance(request).getCapabilities();
+        org.dataone.service.types.v2.Node node = MNodeService.getInstance(request).getCapabilities();
         CertificateManager.getInstance().setCertificateLocation(INTRUSTCERTFILE);
         String baseURL = node.getBaseURL();
         System.out.println("================The base url is "+baseURL);
@@ -275,10 +275,18 @@ public class SolrQueryAccessFilterTest extends D1NodeServiceTest {
         }
         System.out.println("================The MODIFIED base url is "+baseURL);
         MNode mnNode = D1Client.getMN(baseURL);
-        input = mnNode.query(SOLR, generateQuery(id.getValue()));
-        doc = generateDoc(input);
-        String resultId2 = extractElementValue(doc, IDXPATH);
-        assertTrue("In the testDistrustCertificate method, the query result id should be null", resultId2==null);
+        try {
+            input = mnNode.query(querySession, SOLR, generateQuery(id.getValue()));
+            fail("Can't reach here since it is an untrusted certificate");
+        } catch (Exception e) {
+            System.out.println("The exception is "+e.getMessage());
+            System.out.println("the exception class is "+e.getClass().getCanonicalName());
+            assertTrue(e instanceof ServiceFailure);
+        }
+        
+        //doc = generateDoc(input);
+        //String resultId2 = extractElementValue(doc, IDXPATH);
+        //assertTrue("In the testDistrustCertificate method, the query result id should be null", resultId2==null);
         archive(session, id);
         
     }
@@ -365,7 +373,7 @@ public class SolrQueryAccessFilterTest extends D1NodeServiceTest {
         String query = generateQuery(id.getValue());
         MNodeService service = MNodeService.getInstance(request);
         service.setSession(session);
-        InputStream input = service.query(SOLR, query);
+        InputStream input = service.query(session, SOLR, query);
         return input;
     }
     

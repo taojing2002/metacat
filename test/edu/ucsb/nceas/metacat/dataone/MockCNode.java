@@ -19,31 +19,75 @@
  */
 package edu.ucsb.nceas.metacat.dataone;
 
-import org.dataone.client.CNode;
+import java.io.IOException;
+
+import org.dataone.client.exception.ClientSideException;
+import org.dataone.client.v2.impl.MultipartCNode;
 import org.dataone.service.exceptions.IdentifierNotUnique;
-import org.dataone.service.exceptions.InvalidRequest;
 import org.dataone.service.exceptions.InvalidToken;
 import org.dataone.service.exceptions.NotAuthorized;
 import org.dataone.service.exceptions.NotFound;
 import org.dataone.service.exceptions.NotImplemented;
 import org.dataone.service.exceptions.ServiceFailure;
+//import org.dataone.service.exceptions.IdentifierNotUnique;
 import org.dataone.service.types.v1.Identifier;
+import org.dataone.service.types.v1.NodeReference;
+import org.dataone.service.types.v1.NodeType;
 import org.dataone.service.types.v1.Session;
 import org.dataone.service.types.v1.Subject;
-import org.dataone.service.types.v1.SystemMetadata;
+import org.dataone.service.types.v2.Node;
+import org.dataone.service.types.v2.NodeList;
+import org.dataone.service.types.v2.SystemMetadata;
 
 /**
  * MockCNode mimics a DataONE Coordinating Node, and should be used only for testing
  * when there is a dependency on CN services
  */
-public class MockCNode extends CNode {
+public class MockCNode extends MultipartCNode {
 
     /**
      * See superclass for documentation
      */
-    public MockCNode() {
-    	super(null);
+    public MockCNode() throws ClientSideException, IOException {
+        super(null);
+        
     }
+    
+    @Override
+	public NodeList listNodes() throws NotImplemented, ServiceFailure {
+		NodeList list = new NodeList();
+		list.addNode(getCapabilities());
+		list.addNode(getTestMN());
+		return list;
+	}
+    
+    @Override
+	public Node getCapabilities() throws NotImplemented, ServiceFailure {
+		Node node = new Node();
+		node.setIdentifier(getNodeId());
+		Subject subject = new Subject();
+		subject.setValue("cn=" + getNodeId() + ",dc=dataone,dc=org");
+		node.addSubject(subject );
+		node.setType(getNodeType());
+		return node;
+	}
+    
+    @Override
+	public NodeReference getNodeId() {
+		NodeReference nodeRef = new NodeReference();
+		nodeRef.setValue("urn:node:MockCNode");
+		return nodeRef ;
+	}
+    
+    @Override
+	public NodeType getNodeType() {
+		return NodeType.CN;
+	}
+    
+    @Override
+	public String getNodeBaseServiceUrl() {
+		return "https//:foo.dataone.org";
+	}
     
     /**
      * No records exist in the Mock CNode - indicates such
@@ -60,23 +104,24 @@ public class MockCNode extends CNode {
     @Override
     public boolean hasReservation(Session session, Subject subject, Identifier pid) 
     	throws InvalidToken, ServiceFailure, NotFound,
-        NotAuthorized, IdentifierNotUnique, NotImplemented {
+        NotAuthorized, NotImplemented {
     	// always return true
         return true;
     }
     
-    /**
-     * we only want to test against ourselves
+    /*
+     * Create a test mn in this env.
      */
-    @Override
-    public String lookupNodeBaseUrl(String nodeId) throws ServiceFailure, NotImplemented {
-
-    	try {
-			return MNodeService.getInstance(null).getCapabilities().getBaseURL();
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		return null;
+    private Node getTestMN() {
+        Node node = new Node();
+        NodeReference nodeRef = new NodeReference();
+        nodeRef.setValue("urn:node:test_MN-12346");
+        node.setIdentifier(nodeRef);
+        Subject subject = new Subject();
+        subject.setValue("cn=" + getNodeId() + ",dc=dataone,dc=org");
+        node.addSubject(subject );
+        node.setType(NodeType.MN);
+        return node;
     }
+    
 }

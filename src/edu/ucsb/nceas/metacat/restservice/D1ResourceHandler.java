@@ -23,14 +23,12 @@
 package edu.ucsb.nceas.metacat.restservice;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
-import java.security.PrivateKey;
-import java.security.cert.X509Certificate;
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.Iterator;
@@ -41,31 +39,21 @@ import java.util.Timer;
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.xml.parsers.ParserConfigurationException;
 
 import org.apache.commons.fileupload.FileUploadException;
 import org.apache.commons.io.IOUtils;
 import org.apache.log4j.Logger;
-import org.dataone.client.auth.CertificateManager;
 import org.dataone.mimemultipart.MultipartRequest;
 import org.dataone.mimemultipart.MultipartRequestResolver;
 import org.dataone.portal.PortalCertificateManager;
 import org.dataone.service.exceptions.BaseException;
 import org.dataone.service.exceptions.InvalidRequest;
 import org.dataone.service.exceptions.ServiceFailure;
-import org.dataone.service.types.v1.AccessPolicy;
 import org.dataone.service.types.v1.Group;
 import org.dataone.service.types.v1.Person;
-import org.dataone.service.types.v1.Replica;
-import org.dataone.service.types.v1.ReplicationPolicy;
 import org.dataone.service.types.v1.Session;
 import org.dataone.service.types.v1.Subject;
 import org.dataone.service.types.v1.SubjectInfo;
-import org.dataone.service.types.v1.SystemMetadata;
-import org.dataone.service.util.ExceptionHandler;
-import org.dataone.service.util.TypeMarshaller;
-import org.jibx.runtime.JiBXException;
-import org.xml.sax.SAXException;
 
 import edu.ucsb.nceas.metacat.MetacatHandler;
 import edu.ucsb.nceas.metacat.properties.PropertyService;
@@ -93,7 +81,7 @@ public class D1ResourceHandler {
     public static final byte HEAD = 5;
 
 	/** Maximum size of uploads, defaults to 1GB if not set in property file */
-	private static int MAX_UPLOAD_SIZE = 1000000000;
+	protected static int MAX_UPLOAD_SIZE = 1000000000;
 
     /*
      * API Resources
@@ -108,6 +96,8 @@ public class D1ResourceHandler {
     
     protected static final String RESOURCE_IS_AUTHORIZED = "isAuthorized";
     protected static final String RESOURCE_ACCESS_RULES = "accessRules";
+    
+    protected static final String RESOURCE_VIEWS = "views";
 
     
     /*
@@ -153,37 +143,9 @@ public class D1ResourceHandler {
         logMetacat = Logger.getLogger(D1ResourceHandler.class);
         try {
   
-        	// initialize the session - three options
-        	// #1
-        	// load session from certificate in request
-            session = CertificateManager.getInstance().getSession(request);
-            
-            // #2
-            if (session == null) {
-	        	// check for session-based certificate from the portal
-            	try {
-		        	String configurationFileName = servletContext.getInitParameter("oa4mp:client.config.file");
-		        	String configurationFilePath = servletContext.getRealPath(configurationFileName);
-		        	PortalCertificateManager portalManager = new PortalCertificateManager(configurationFilePath);
-		        	logMetacat.debug("Initialized the PortalCertificateManager using config file: " + configurationFilePath);
-		        	X509Certificate certificate = portalManager.getCertificate(request);
-		        	logMetacat.debug("Retrieved certificate: " + certificate);
-			    	PrivateKey key = portalManager.getPrivateKey(request);
-			    	logMetacat.debug("Retrieved key: " + key);
-			    	if (certificate != null && key != null) {
-			        	request.setAttribute("javax.servlet.request.X509Certificate", certificate);
-			        	logMetacat.debug("Added certificate to the request: " + certificate.toString());
-			    	}
-			    	
-		            // reload session from certificate that we jsut set in request
-		            session = CertificateManager.getInstance().getSession(request);
-            	} catch (Throwable t) {
-            		// don't require configured OAuth4MyProxy
-            		logMetacat.error(t.getMessage(), t);
-            	}
-            }
-            
-            // #3
+        	// first try the usual methods
+        	session = PortalCertificateManager.getInstance().getSession(request);
+        	
             // last resort, check for Metacat sessionid
             if (session == null) {
 	            SessionData sessionData = RequestUtil.getSessionData(request);
@@ -260,88 +222,6 @@ public class D1ResourceHandler {
     }
 
     /**
-     * Parse the BaseException information for replication status failures if any
-     * 
-     * @return failure  the BaseException failure, one of it's subclasses, or null
-     * @throws ServiceFailure
-     * @throws InvalidRequest
-     * @throws JiBXException 
-     * @throws IllegalAccessException 
-     * @throws InstantiationException 
-     * @throws IOException 
-     */
-    protected BaseException collectReplicationStatus() 
-        throws ServiceFailure, InvalidRequest, IOException, 
-        InstantiationException, IllegalAccessException, JiBXException {
-        
-        BaseException failure = null;
-        File tmpDir = getTempDirectory();
-        MultipartRequest mr = null;
-        Map<String, File> mmFileParts = null;
-        File exceptionFile = null;
-        InputStream exceptionFileStream = null;
-
-        // Read the incoming data from its Mime Multipart encoding
-        logMetacat.debug("Parsing BaseException from the mime multipart entity");
-
-        // handle MMP inputs
-        MultipartRequestResolver mrr = 
-            new MultipartRequestResolver(tmpDir.getAbsolutePath(), MAX_UPLOAD_SIZE, 0);
-
-        try {
-            mr = mrr.resolveMultipart(request);
-            logMetacat.debug("Resolved the replication status BaseException multipart request.");
-            
-        } catch (IOException e) {
-            throw new ServiceFailure("4700", "Couldn't resolve the multipart request: " +
-                e.getMessage());
-            
-        } catch (FileUploadException e) {
-            throw new ServiceFailure("4700", "Couldn't resolve the multipart request: " +
-                e.getMessage());
-            
-        } catch (Exception e) {
-            throw new ServiceFailure("4700", "Couldn't resolve the multipart request: " +
-                e.getMessage());
-            
-        }
-
-        // get the map of file parts
-        mmFileParts = mr.getMultipartFiles();
-        
-        if ( mmFileParts == null || mmFileParts.keySet() == null) {
-            logMetacat.debug("BaseException for setReplicationStatus is null");            
-        }
-        
-        multipartparams = mr.getMultipartParameters();
-        exceptionFile = mmFileParts.get("failure");
-        
-        if ( exceptionFile != null && exceptionFile.length() > 0 ) {
-            
-            // deserialize the BaseException subclass
-            exceptionFileStream = new FileInputStream(exceptionFile);
-            try {
-                failure = ExceptionHandler.deserializeXml(exceptionFileStream, 
-                    "Replication failed for an unknown reason.");
-                
-            } catch (ParserConfigurationException e) {
-                throw new ServiceFailure("4700", "Couldn't parse the replication failure exception: " +
-                        e.getMessage());
-                
-            } catch (SAXException e) {
-                throw new ServiceFailure("4700", "Couldn't traverse the replication failure exception: " +
-                        e.getMessage());
-                
-            }
-                
-        }
-        
-        
-        return failure;
-        
-    }
-
-    /**
      * Parse string parameters from the mime multipart entity of the request.
      * Populates the multipartparams map
      * 
@@ -370,305 +250,6 @@ public class D1ResourceHandler {
                 
     }
     
-
-    /**
-     * Parse the replication policy document out of the mime-multipart form data
-     * 
-     * @return policy  the encoded policy
-     * @throws ServiceFailure
-     * @throws InvalidRequest
-     * @throws IOException
-     * @throws InstantiationException
-     * @throws IllegalAccessException
-     * @throws JiBXException
-     */
-    protected ReplicationPolicy collectReplicationPolicy() 
-        throws ServiceFailure, InvalidRequest, IOException, InstantiationException, 
-        IllegalAccessException, JiBXException {
-        
-        ReplicationPolicy policy = null;
-        File tmpDir = getTempDirectory();
-        MultipartRequest mr = null;
-        Map<String, File> mmFileParts = null;
-        File replPolicyFile = null;
-        InputStream replPolicyStream = null;
-        
-        // Read the incoming data from its Mime Multipart encoding
-        logMetacat.debug("Parsing ReplicationPolicy from the mime multipart entity");
-
-        // handle MMP inputs
-        MultipartRequestResolver mrr = 
-            new MultipartRequestResolver(tmpDir.getAbsolutePath(), MAX_UPLOAD_SIZE, 0);
-        
-        try {
-            mr = mrr.resolveMultipart(request);
-            logMetacat.debug("Resolved the ReplicationPolicy multipart request.");
-            
-        } catch (IOException e) {
-            throw new ServiceFailure("4882", "Couldn't resolve the multipart request: " +
-                e.getMessage());
-            
-        } catch (FileUploadException e) {
-            throw new ServiceFailure("4882", "Couldn't resolve the multipart request: " +
-                e.getMessage());
-            
-        } catch (Exception e) {
-            throw new ServiceFailure("4882", "Couldn't resolve the multipart request: " +
-                e.getMessage());
-            
-        }
-        
-        // get the map of file parts
-        mmFileParts = mr.getMultipartFiles();
-        
-        if ( mmFileParts == null || mmFileParts.keySet() == null) {
-            throw new InvalidRequest("4883", "The multipart request must include " +
-                "a file with the name 'policy'.");
-            
-        }
-        
-        multipartparams = mr.getMultipartParameters();
-        replPolicyFile = mmFileParts.get("policy");
-        
-        if ( replPolicyFile == null ) {
-            throw new InvalidRequest("4883", "The multipart request must include " +
-            "a file with the name 'policy'.");
-            
-        }
-        
-        
-        // deserialize the ReplicationPolicy
-        replPolicyStream = new FileInputStream(replPolicyFile);
-        policy = TypeMarshaller.unmarshalTypeFromStream(ReplicationPolicy.class, replPolicyStream);
-        
-        return policy;
-        
-    }
-
-    /**
-     * Parse the replica metadata document out of the mime-multipart form data
-     * 
-     * @return replica  the encoded replica
-     * @throws ServiceFailure
-     * @throws InvalidRequest
-     * @throws IOException
-     * @throws InstantiationException
-     * @throws IllegalAccessException
-     * @throws JiBXException
-     */
-    protected Replica collectReplicaMetadata() 
-        throws ServiceFailure, InvalidRequest {
-        
-        Replica replica = null;
-        File tmpDir = getTempDirectory();
-        MultipartRequest mr = null;
-        Map<String, File> mmFileParts = null;
-        File replicaFile = null;
-        InputStream replicaStream = null;
-        
-        // Read the incoming data from its Mime Multipart encoding
-        logMetacat.debug("Parsing Replica from the mime multipart entity");
-
-        // handle MMP inputs
-        MultipartRequestResolver mrr = 
-            new MultipartRequestResolver(tmpDir.getAbsolutePath(), MAX_UPLOAD_SIZE, 0);
-        
-        try {
-            mr = mrr.resolveMultipart(request);
-            logMetacat.debug("Resolved the Replica multipart request.");
-            
-        } catch (IOException e) {
-            throw new ServiceFailure("4852", "Couldn't resolve the multipart request: " +
-                e.getMessage());
-            
-        } catch (FileUploadException e) {
-            throw new ServiceFailure("4852", "Couldn't resolve the multipart request: " +
-                    e.getMessage());
-            
-        } catch (Exception e) {
-            throw new ServiceFailure("4852", "Couldn't resolve the multipart request: " +
-                    e.getMessage());
-            
-        }
-        
-        // get the map of file parts
-        mmFileParts = mr.getMultipartFiles();
-        
-        if ( mmFileParts == null || mmFileParts.keySet() == null) {
-            throw new InvalidRequest("4853", "The multipart request must include " +
-                "a file with the name 'replicaMetadata'.");
-            
-        }
-        
-        multipartparams = mr.getMultipartParameters();
-        replicaFile = mmFileParts.get("replicaMetadata");
-        
-        if ( replicaFile == null ) {
-            throw new InvalidRequest("4853", "The multipart request must include " +
-            "a file with the name 'replicaMetadata'.");
-            
-        }
-        
-        
-        // deserialize the ReplicationPolicy
-        try {
-            replicaStream = new FileInputStream(replicaFile);
-        } catch (FileNotFoundException e) {
-            throw new ServiceFailure("4852", "Couldn't find the multipart file: " +
-                    e.getMessage());
-            
-        }
-        
-        try {
-            replica = TypeMarshaller.unmarshalTypeFromStream(Replica.class, replicaStream);
-        } catch (IOException e) {
-            throw new ServiceFailure("4852", "Couldn't deserialize the replica document: " +
-                    e.getMessage());
-            
-        } catch (InstantiationException e) {
-            throw new ServiceFailure("4852", "Couldn't deserialize the replica document: " +
-                    e.getMessage());
-            
-        } catch (IllegalAccessException e) {
-            throw new ServiceFailure("4852", "Couldn't deserialize the replica document: " +
-                    e.getMessage());
-            
-        } catch (JiBXException e) {
-            throw new ServiceFailure("4852", "Couldn't deserialize the replica document: " +
-                    e.getMessage());
-            
-        }
-        
-        return replica;
-        
-    }
-    
-    protected AccessPolicy collectAccessPolicy() 
-        throws IOException, ServiceFailure, InvalidRequest, JiBXException, 
-        InstantiationException, IllegalAccessException, ParserConfigurationException, 
-        SAXException  {
-		
-		// Read the incoming data from its Mime Multipart encoding
-		logMetacat.debug("Disassembling MIME multipart form");
-		InputStream ap = null;
-
-		// handle MMP inputs
-		File tmpDir = getTempDirectory();
-		logMetacat.debug("temp dir: " + tmpDir.getAbsolutePath());
-		MultipartRequestResolver mrr = 
-			new MultipartRequestResolver(tmpDir.getAbsolutePath(), MAX_UPLOAD_SIZE, 0);
-		MultipartRequest mr = null;
-		try {
-			mr = mrr.resolveMultipart(request);
-		} catch (Exception e) {
-			throw new ServiceFailure("2161", 
-					"Could not resolve multipart: " + e.getMessage());
-		}
-		logMetacat.debug("resolved multipart request");
-		Map<String, File> files = mr.getMultipartFiles();
-		if (files == null || files.keySet() == null) {
-			throw new InvalidRequest("2163",
-					"must have multipart file with name 'accessPolicy'");
-		}
-		logMetacat.debug("got multipart files");
-
-		multipartparams = mr.getMultipartParameters();
-
-		File apFile = files.get("accessPolicy");
-		if (apFile == null) {
-			throw new InvalidRequest("2163",
-					"Missing the required file-part 'accessPolicy' from the multipart request.");
-		}
-		logMetacat.debug("apFile: " + apFile.getAbsolutePath());
-		ap = new FileInputStream(apFile);
-	
-		AccessPolicy accessPolicy = TypeMarshaller.unmarshalTypeFromStream(AccessPolicy.class, ap);
-		return accessPolicy;
-	}
-    
-    protected SystemMetadata collectSystemMetadata() 
-        throws IOException, FileUploadException, ServiceFailure, InvalidRequest, 
-        JiBXException, InstantiationException, IllegalAccessException  {
-		
-		// Read the incoming data from its Mime Multipart encoding
-		logMetacat.debug("Disassembling MIME multipart form");
-		InputStream sysmeta = null;
-
-		// handle MMP inputs
-		File tmpDir = getTempDirectory();
-		logMetacat.debug("temp dir: " + tmpDir.getAbsolutePath());
-		MultipartRequestResolver mrr = 
-			new MultipartRequestResolver(tmpDir.getAbsolutePath(), MAX_UPLOAD_SIZE, 0);
-		MultipartRequest mr = null;
-		try {
-			mr = mrr.resolveMultipart(request);
-			
-		} catch (Exception e) {
-		  if ( logMetacat.isDebugEnabled() ) {
-		      e.printStackTrace();
-		      
-		  }
-			throw new ServiceFailure("1202", 
-					"Could not resolve multipart: " + e.getMessage());
-			
-		}
-		logMetacat.debug("resolved multipart request");
-		Map<String, File> files = mr.getMultipartFiles();
-		if (files == null) {
-			throw new ServiceFailure("1202",
-					"register meta must have multipart file with name 'sysmeta'");
-		}
-		logMetacat.debug("got multipart files");
-
-		if (files.keySet() == null) {
-			logMetacat.error("No file keys in MMP request.");
-			throw new ServiceFailure(
-					"1202",
-					"No file keys found in MMP.  "
-							+ "register meta must have multipart file with name 'sysmeta'");
-		}
-
-		// for logging purposes, dump out the key-value pairs that
-		// constitute the request
-		// 3 types exist: request params, multipart params, and
-		// multipart files
-		Iterator it = files.keySet().iterator();
-		logMetacat.debug("iterating through request parts: " + it);
-		while (it.hasNext()) {
-			String key = (String) it.next();
-			logMetacat.debug("files key: " + key);
-			logMetacat.debug("files value: " + files.get(key));
-		}
-
-		multipartparams = mr.getMultipartParameters();
-		it = multipartparams.keySet().iterator();
-		while (it.hasNext()) {
-			String key = (String) it.next();
-			logMetacat.debug("multipartparams key: " + key);
-			logMetacat.debug("multipartparams value: " + multipartparams.get(key));
-		}
-
-		it = params.keySet().iterator();
-		while (it.hasNext()) {
-			String key = (String) it.next();
-			logMetacat.debug("param key: " + key);
-			logMetacat.debug("param value: " + params.get(key));
-		}
-		logMetacat.debug("done iterating the request...");
-
-		File smFile = files.get("sysmeta");
-		if (smFile == null) {
-			throw new InvalidRequest("1102",
-					"Missing the required file-part 'sysmeta' from the multipart request.");
-		}
-		logMetacat.debug("smFile: " + smFile.getAbsolutePath());
-		sysmeta = new FileInputStream(smFile);
-	
-		logMetacat.debug("Commence creation...");
-		SystemMetadata systemMetadata = TypeMarshaller.unmarshalTypeFromStream(SystemMetadata.class, sysmeta);
-		return systemMetadata;
-	}
-    
     /**
      * Process the MMP request that includes files for each param
      * @return map of param key and the temp file that contains the encoded information
@@ -677,7 +258,7 @@ public class D1ResourceHandler {
      */
     protected Map<String, File> collectMultipartFiles() 
         throws ServiceFailure, InvalidRequest {
-    	
+   
         // Read the incoming data from its Mime Multipart encoding
         logMetacat.debug("Disassembling MIME multipart form");
         
@@ -685,7 +266,7 @@ public class D1ResourceHandler {
         File tmpDir = getTempDirectory();
         logMetacat.debug("temp dir: " + tmpDir.getAbsolutePath());
         MultipartRequestResolver mrr = 
-        	new MultipartRequestResolver(tmpDir.getAbsolutePath(), MAX_UPLOAD_SIZE, 0);
+        	new MultipartRequestResolver(tmpDir.getAbsolutePath(),  MAX_UPLOAD_SIZE, 0);
         MultipartRequest mr = null;
 		    try {
 		    	  mr = mrr.resolveMultipart(request);
@@ -769,7 +350,7 @@ public class D1ResourceHandler {
 		File tmpDir = getTempDirectory();
 		logMetacat.debug("temp dir: " + tmpDir.getAbsolutePath());
 		MultipartRequestResolver mrr = 
-			new MultipartRequestResolver(tmpDir.getAbsolutePath(), MAX_UPLOAD_SIZE, 0);
+			new MultipartRequestResolver(tmpDir.getAbsolutePath(),  MAX_UPLOAD_SIZE, 0);
 		MultipartRequest mr = mrr.resolveMultipart(request);
 		
 		multipartparams = mr.getMultipartParameters();
@@ -882,5 +463,27 @@ public class D1ResourceHandler {
                     + e1.getMessage());
         }
     }
-
+    
+    /**
+     * A method to decode the given string which is a part of a uri.
+     * The default encoding is utf-8. If the utf-8 is not support in this system, the default one in the systme will be used.
+     * @param s
+     * @return null if the given string is null
+     */
+    public static String decode(String s) {
+        String result = null;
+        if(s != null) {
+            try
+            {
+                result = URLDecoder.decode(s, "UTF-8");
+            }
+            catch (UnsupportedEncodingException e)
+            {
+                result = URLDecoder.decode(s);
+            }
+            System.out.println("After decoded: " + result);
+        }
+        
+        return result;
+    }
 }

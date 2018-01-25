@@ -16,6 +16,7 @@
 package edu.ucsb.nceas.metacat.index.resourcemap;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.Date;
@@ -36,8 +37,9 @@ import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.schema.IndexSchema;
 import org.apache.solr.servlet.SolrRequestParsers;
+import org.dataone.cn.indexer.XmlDocumentUtility;
 import org.dataone.cn.indexer.convert.SolrDateConverter;
-import org.dataone.cn.indexer.parser.AbstractDocumentSubprocessor;
+import org.dataone.cn.indexer.parser.BaseXPathDocumentSubprocessor;
 import org.dataone.cn.indexer.parser.IDocumentSubprocessor;
 import org.dataone.cn.indexer.resourcemap.ResourceMap;
 import org.dataone.cn.indexer.resourcemap.ResourceMapFactory;
@@ -61,7 +63,7 @@ import edu.ucsb.nceas.metacat.index.SolrIndex;
  * The solr doc of the ResourceMap self only has the system metadata information.
  * The solr docs of the science metadata doc and data file have the resource map package information.
  */
-public class ResourceMapSubprocessor extends AbstractDocumentSubprocessor implements IDocumentSubprocessor {
+public class ResourceMapSubprocessor extends BaseXPathDocumentSubprocessor implements IDocumentSubprocessor {
 
     private static final String QUERY ="q=id:";
     private static final String QUERY2="q="+SolrElementField.FIELD_RESOURCEMAP+":";
@@ -77,10 +79,11 @@ public class ResourceMapSubprocessor extends AbstractDocumentSubprocessor implem
           
     @Override
     public Map<String, SolrDoc> processDocument(String identifier, Map<String, SolrDoc> docs,
-    Document doc) throws IOException, EncoderException, SAXException,
+    InputStream is) throws IOException, EncoderException, SAXException,
     XPathExpressionException, ParserConfigurationException, SolrServerException, NotImplemented, NotFound, UnsupportedType, OREParserException, ResourceMapException {
         SolrDoc resourceMapDoc = docs.get(identifier);
-        List<SolrDoc> processedDocs = processResourceMap(resourceMapDoc, doc);
+        Document doc = XmlDocumentUtility.generateXmlDocument(is);
+		List<SolrDoc> processedDocs = processResourceMap(resourceMapDoc, doc );
         Map<String, SolrDoc> processedDocsMap = new HashMap<String, SolrDoc>();
         for (SolrDoc processedDoc : processedDocs) {
             processedDocsMap.put(processedDoc.getIdentifier(), processedDoc);

@@ -305,11 +305,6 @@ Select the checkbox next to your customized skin or and click the
 select the ``default`` skin. Once you have selected a skin, Metacat will open 
 a list of options that apply to the Registry interface.
 
-.. figure:: images/screenshots/image025.png
-   :align: center
-
-   Configuring Metacat skins.
-
 Select the lists and modules that you would like to appear in the Registry 
 form-interface by checking the box beside each. When you save the configuration, 
 the customized interface will appear to site visitors.
@@ -447,8 +442,8 @@ optional properties that are only relevant when optional Metacat features
   <CONTEXT_DIR>/WEB_INF/metacat.properties
 
 Where ``<CONTEXT_DIR>`` is the directory in which the Metacat application code 
-lives (e.g., ``/var/lib/tomcat6/webapps/metacat``). The path is a combination 
-of the Web application directory (e.g., ``/var/lib/tomcat6/webapps/``) and 
+lives (e.g., ``/var/lib/tomcat7/webapps/metacat``). The path is a combination 
+of the Web application directory (e.g., ``/var/lib/tomcat7/webapps/``) and 
 the Metacat context directory (e.g., ``metacat``). Both values depend upon how your 
 system was set up during installation.
 

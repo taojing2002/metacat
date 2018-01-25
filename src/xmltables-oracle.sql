@@ -406,6 +406,7 @@ END;
  */
 CREATE TABLE systemMetadata (
    guid   VARCHAR2(2000),    -- the globally unique string identifier
+   series_id   VARCHAR2(2000),    -- the series identifier
    serial_version VARCHAR2(256), --the serial version of the object   
    date_uploaded DATE, -- the date/time the document was first submitted
    rights_holder VARCHAR2(250), --the user who has rights to the document, usually the first persons to upload it
@@ -422,9 +423,24 @@ CREATE TABLE systemMetadata (
    number_replicas NUMBER(8), 	-- the number of replicas allowed
    obsoletes   VARCHAR2(2000),    -- the identifier of the record that this replaces
    obsoleted_by   VARCHAR2(2000),    -- the identifier of the record that replaces this record
+   media_type   VARCHAR2(2000),      -- the media type of the object
+   file_name    VARCHAR2(2000),      -- the suggested file name of the object
    CONSTRAINT systemMetadata_pk 
 		PRIMARY KEY (guid)
 )
+
+/*
+ * Table used to store the properties for media types. They are part of the system metadata. But a media type
+ * can have multiple properties, we have to store them in a separate table. The guids in this table refer
+ * the guids in the systemMetadata.
+ */
+CREATE TABLE smMediaTypeProperties (
+  guid   VARCHAR2(2000),  -- id refer to guid in the system metadata table
+  name   VARCHAR2(512), -- name of the property
+  value   VARCHAR2(512), -- value of the property
+  CONSTRAINT smMediaTypeProperties_fk 
+     FOREIGN KEY (guid) REFERENCES systemMetadata DEFERRABLE
+);
 
 CREATE TABLE smReplicationPolicy (
 	guid VARCHAR2(2000),	-- the globally unique string identifier of the object that the system metadata describes

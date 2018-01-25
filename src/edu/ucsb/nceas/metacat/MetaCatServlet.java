@@ -48,6 +48,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
+import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 
@@ -508,13 +509,14 @@ public class MetaCatServlet extends HttpServlet {
 	 * Index the paths specified in the metacat.properties
 	 */
     private void checkIndexPaths() {
-        Logger logMetacat = Logger.getLogger(MetaCatServlet.class);
+    	Logger logMetacat = Logger.getLogger(MetaCatServlet.class);
     	logMetacat.debug("MetaCatServlet.checkIndexPaths - starting....");
     	if(!EnabledQueryEngines.getInstance().isEnabled(EnabledQueryEngines.PATHQUERYENGINE)) {
-    	    logMetacat.info("MetaCatServlet.checkIndexPaths - the pathquery is disabled and it does nothing for checking path_index");
+    		logMetacat.info("MetaCatServlet.checkIndexPaths - the pathquery is disabled and it does nothing for checking path_index");
             return;
         }
     	logMetacat.debug("MetaCatServlet.checkIndexPaths - after checking is the pathquery enabled or not...");
+        
 
         Vector<String> pathsForIndexing = null;
         try {  
@@ -742,6 +744,24 @@ public class MetaCatServlet extends HttpServlet {
 						skins[0] = skin;
 						params.put("qformat", skins);
 					}
+					
+					// attempt to redirect to metacatui (#view/{pid}) if not getting the raw XML
+					// see: https://projects.ecoinformatics.org/ecoinfo/issues/6546
+					if (!skin.equals("xml")) {
+						String uiContext = PropertyService.getProperty("ui.context");
+						String docidNoRev = DocumentUtil.getDocIdFromAccessionNumber(docidToRead);
+						int rev = DocumentUtil.getRevisionFromAccessionNumber(docidToRead);
+						String pid = null;
+						try {
+							pid = IdentifierManager.getInstance().getGUID(docidNoRev, rev);
+							response.sendRedirect(SystemUtil.getServerURL() + "/" + uiContext + "/#view/" + pid );
+							return;
+						} catch (McdbDocNotFoundException nfe) {
+							logMetacat.warn("Could not locate PID for docid: " + docidToRead, nfe);
+						}
+					}
+					
+					// otherwise carry on as usual
 					handler.handleReadAction(params, request, response, "public", null, null);
 					return;
 				}
@@ -916,7 +936,8 @@ public class MetaCatServlet extends HttpServlet {
 					response.setContentType("text/xml");
 					out.println("<?xml version=\"1.0\"?>");
 					out.println("<error>");
-					out.println("Permission denied for user " + userName + " " + action);
+					String cleanMessage = StringEscapeUtils.escapeXml("Permission denied for user " + userName + " " + action);
+					out.println(cleanMessage);
 					out.println("</error>");
 				}
 				out.close();
@@ -929,7 +950,8 @@ public class MetaCatServlet extends HttpServlet {
 					response.setContentType("text/xml");
 					out.println("<?xml version=\"1.0\"?>");
 					out.println("<error>");
-					out.println("Permission denied for " + action);
+					String cleanMessage = StringEscapeUtils.escapeXml("Permission denied for " + action);
+					out.println(cleanMessage);
 					out.println("</error>");
 				}
 				out.close();
@@ -1110,7 +1132,8 @@ public class MetaCatServlet extends HttpServlet {
 					PrintWriter out = response.getWriter();
 					out.println("<?xml version=\"1.0\"?>");
 					out.println("<error>");
-					out.println("Error: action: " + action + " not registered.  Please report this error.");
+					String cleanMessage = StringEscapeUtils.escapeXml("Error: action: " + action + " not registered.  Please report this error.");
+					out.println(cleanMessage);
 					out.println("</error>");
 					out.close();
 				}

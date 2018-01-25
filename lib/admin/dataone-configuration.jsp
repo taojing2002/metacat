@@ -108,6 +108,17 @@
 		
 		<div class="form-row">
 			<div class="textinput-label">
+				<label for="D1Client.CN_URL" title="The Coordinating node URL which the member node joins">Coordinating Node URL</label>
+			</div>
+			<input class="textinput" 
+				id="D1Client.CN_URL" 
+				name="D1Client.CN_URL" 	             		    	    	           		    	             			
+				value="<%= request.getAttribute("D1Client.CN_URL") %>"/> 
+			<i class="icon-question-sign" onClick="helpWindow('<%= request.getContextPath() %>','docs/dataone.html#configuring-metacat-as-a-member-node')"></i>
+		</div>
+		
+		<div class="form-row">
+			<div class="textinput-label">
 				<label for="dataone.nodeName" title="A short, human-readable name for this node">Node Name</label>
 			</div>
 			<input class="textinput" 
@@ -360,7 +371,7 @@
 			<%if (isUpdate) { %>
 				<input class=button type="submit" value="Update"/>
 			<%} else if (isSubmitted) { %>
-				<input class=button type="submit" value="Update" disabled="disabled"/>
+				<input class=button type="submit" value="Update"/>
 			<%} else { %>
 				<input class=button type="submit" value="Register"/>
 			<%} %>

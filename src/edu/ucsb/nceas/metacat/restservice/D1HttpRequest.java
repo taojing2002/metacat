@@ -25,12 +25,10 @@ package edu.ucsb.nceas.metacat.restservice;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
-import java.util.Enumeration;
-import java.util.Map;
-import java.util.StringTokenizer;
 
 import javax.servlet.ServletRequest;
-import javax.servlet.http.*;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletRequestWrapper;
 
 /**
  * @author berkley
@@ -60,15 +58,16 @@ public class D1HttpRequest extends HttpServletRequestWrapper
         String strip = this.getContextPath() + this.getServletPath();
         System.out.println("stripping " + strip + " from requestURI");
         s = reqUri.substring(strip.length());
-        try
+        /*try
         {
             s = URLDecoder.decode(s, "UTF-8");
         }
         catch (UnsupportedEncodingException e)
         {
             s = URLDecoder.decode(s);
-        }
+        }*/
         System.out.println("new pathinfo: " + s);
         return s;
     }
+    
 }

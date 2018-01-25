@@ -175,6 +175,28 @@ sub login {
 }
 
 #############################################################
+# subroutine to logout of Metacat
+#############################################################
+sub logout {
+    my $self = shift;
+    
+    my %postData = (action => 'logout');
+    
+    my $response = $self->sendData(%postData);
+    
+    my $returnval = 1;
+    if (($response) && $response->content =~ /<logout>/) {
+    	$returnval = 0;
+  	}
+  	
+    # clear the cookie
+    my $cookie_jar = $self->{'cookies'};
+    $$cookie_jar->clear();
+    
+    return $returnval;
+}
+
+#############################################################
 # subroutine to log into Metacat and get usr info xml for
 # a logged in user
 #############################################################

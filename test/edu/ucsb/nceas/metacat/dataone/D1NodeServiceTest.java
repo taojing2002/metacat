@@ -25,6 +25,7 @@
 
 package edu.ucsb.nceas.metacat.dataone;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
@@ -32,25 +33,33 @@ import java.math.BigInteger;
 import java.util.Date;
 import java.util.List;
 
+import junit.framework.Test;
+import junit.framework.TestSuite;
+
 import org.apache.wicket.protocol.http.mock.MockHttpServletRequest;
-import org.dataone.client.CNode;
-import org.dataone.client.D1Client;
-import org.dataone.client.ObjectFormatCache;
-import org.dataone.service.exceptions.ServiceFailure;
+import org.dataone.client.D1Node;
+import org.dataone.client.NodeLocator;
+import org.dataone.client.exception.ClientSideException;
+import org.dataone.client.v2.CNode;
+import org.dataone.client.v2.itk.D1Client;
+import org.dataone.client.v2.formats.ObjectFormatCache;
+import org.dataone.configuration.Settings;
 import org.dataone.service.types.v1.AccessPolicy;
 import org.dataone.service.types.v1.AccessRule;
 import org.dataone.service.types.v1.Checksum;
 import org.dataone.service.types.v1.Identifier;
-import org.dataone.service.types.v1.Node;
+import org.dataone.service.types.v2.Node;
+import org.dataone.service.types.v2.ObjectFormatList;
 import org.dataone.service.types.v1.NodeReference;
 import org.dataone.service.types.v1.NodeType;
 import org.dataone.service.types.v1.Permission;
 import org.dataone.service.types.v1.Session;
 import org.dataone.service.types.v1.Subject;
-import org.dataone.service.types.v1.SystemMetadata;
+import org.dataone.service.types.v2.SystemMetadata;
 import org.dataone.service.types.v1.util.ChecksumUtil;
-import org.dataone.service.types.v1.util.ObjectFormatServiceImpl;
+import org.dataone.service.types.v2.util.ObjectFormatServiceImpl;
 import org.dataone.service.util.Constants;
+import org.dataone.service.util.TypeMarshaller;
 
 import edu.ucsb.nceas.MCTestCase;
 import edu.ucsb.nceas.metacat.client.Metacat;
@@ -71,18 +80,42 @@ public class D1NodeServiceTest extends MCTestCase {
         // set up the fake request (for logging)
         request = new MockHttpServletRequest(null, null, null);
     }
-  
+    
+    public static Test suite() 
+    {
+        TestSuite suite = new TestSuite();
+        suite.addTest(new D1NodeServiceTest("initialize"));
+        return suite;
+    }
+    
     /**
 	 * Establish a testing framework by initializing appropriate objects
 	 */
-	public void setUp() throws Exception {
-		super.setUp();
-	}
+    public void setUp() throws Exception {
+    	super.setUp();
+		NodeLocator nodeLocator = new NodeLocator() {
+			@Override
+			public D1Node getCNode() throws ClientSideException {
+			    D1Node node = null;
+			    try {
+			        node = new MockCNode();
+			    } catch (IOException e) {
+			        throw new ClientSideException(e.getMessage());
+			    }
+				return node;
+			}
+		};
+		D1Client.setNodeLocator(nodeLocator );
+    	
+    }
 
 	/**
 	 * Release any objects after tests are complete
 	 */
-	public void tearDown() {}
+	public void tearDown() {
+		// set back to force it to use defaults
+		D1Client.setNodeLocator(null);
+	}
 	
 	/**
 	 * constructs a "fake" session with a test subject
@@ -115,7 +148,7 @@ public class D1NodeServiceTest extends MCTestCase {
 
 		// find the first CN in the node list
 		for (Node node : nodes) {
-			if (node.getType() == NodeType.CN) {
+			if (node.getType().equals(NodeType.CN)) {
 				subject = node.getSubject(0);
 				break;
 			}
@@ -123,6 +156,15 @@ public class D1NodeServiceTest extends MCTestCase {
 		session.setSubject(subject);
 		return session;
 
+	}
+	
+	public Session getAnotherSession() throws Exception {
+	    Session session = new Session();
+        Subject subject = new Subject();
+        subject.setValue("cn=test2,dc=dataone,dc=org");
+        session.setSubject(subject);
+        return session;
+	    
 	}
 	
 	/**
@@ -162,8 +204,12 @@ public class D1NodeServiceTest extends MCTestCase {
         sm.setRightsHolder(owner);
         sm.setDateUploaded(new Date());
         sm.setDateSysMetadataModified(new Date());
+        String currentNodeId = Settings.getConfiguration().getString("dataone.nodeId");
+        if(currentNodeId == null || currentNodeId.trim().equals("")) {
+            throw new Exception("there should be value in the dataone.nodeId in the metacat.properties file.");
+        }
         NodeReference nr = new NodeReference();
-        nr.setValue("metacat");
+        nr.setValue(currentNodeId);
         sm.setOriginMemberNode(nr);
         sm.setAuthoritativeMemberNode(nr);
 		// set the access to public read
@@ -194,7 +240,22 @@ public class D1NodeServiceTest extends MCTestCase {
 			} catch (Exception e) {
 				// probably missing the doc
 			}
-			if (is == null) {
+			
+			if (is != null) {
+				// check for v2 OFL
+				try {
+					ObjectFormatList ofl = TypeMarshaller.unmarshalTypeFromStream(ObjectFormatList.class, is);
+				} catch (ClassCastException cce) {
+					// need to update it
+					InputStream formats = ObjectFormatServiceImpl.getInstance().getObjectFormatFile();
+					Reader xmlDocument = new InputStreamReader(formats);
+					int rev = m.getNewestDocRevision(ObjectFormatService.OBJECT_FORMAT_DOCID);
+					rev++;
+					m.update(ObjectFormatService.OBJECT_FORMAT_DOCID + "." + rev, xmlDocument, null);
+				}
+				
+			}
+			else {
 				// get the default from d1_common
 				InputStream formats = ObjectFormatServiceImpl.getInstance().getObjectFormatFile();
 				Reader xmlDocument = new InputStreamReader(formats);

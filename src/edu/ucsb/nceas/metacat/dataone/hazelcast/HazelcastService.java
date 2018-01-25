@@ -42,7 +42,7 @@ import java.util.concurrent.locks.Lock;
 import org.apache.log4j.Logger;
 import org.dataone.service.exceptions.InvalidSystemMetadata;
 import org.dataone.service.types.v1.Identifier;
-import org.dataone.service.types.v1.SystemMetadata;
+import org.dataone.service.types.v2.SystemMetadata;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.config.FileSystemXmlConfig;
@@ -566,11 +566,11 @@ public class HazelcastService extends BaseService
 				try {
 					// this is a push mechanism
 				    DateFormat dateFormat = new SimpleDateFormat("MMM dd, yyyy HH:mm:ss aaa");
-                    System.out.println(dateFormat.format(Calendar.getInstance().getTime())+" Start the hazelcast synchronization");
-                    logMetacat.warn("Start the hazelcast synchronization");
-                    resynchToRemote();
-                    System.out.println(dateFormat.format(Calendar.getInstance().getTime())+" End the hazelcast synchronization");
-                    logMetacat.warn("End the hazelcast synchronization");
+				    System.out.println(dateFormat.format(Calendar.getInstance().getTime())+" Start the hazelcast synchronization");
+				    logMetacat.warn("Start the hazelcast synchronization");
+					resynchToRemote();
+					System.out.println(dateFormat.format(Calendar.getInstance().getTime())+" End the hazelcast synchronization");
+					logMetacat.warn("End the hazelcast synchronization");
 				} catch (Exception e) {
 					logMetacat.error("Error in resynchInThread: " + e.getMessage(), e);
 				}

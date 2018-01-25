@@ -8,7 +8,7 @@
 Metacat: XML Metadata and Data Management System
 ------------------------------------------------                      
 
-Version: 2.4.3 Release
+Version: 2.5.0 Release
 
 Send feedback and bugs to: metacat-dev@ecoinformatics.org
                            http://bugzilla.ecoinformatics.org
@@ -53,6 +53,13 @@ Installation
 ------------
 See the file "docs/install.html" for detailed instructions
 for your OS.
+
+Release Notes for 2.5.0:
+------------------------
+This major release adds DataONE V2 API support
+as well as:
+* MetacatUI 1.8.1
+* Data registry bug fixes
 
 Release Notes for 2.4.3:
 ------------------------
