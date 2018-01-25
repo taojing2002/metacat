@@ -38,6 +38,7 @@ use MIME::Base64;       # for creating the password hash
 use URI;                # for parsing URL syntax
 use Config::Properties; # for parsing Java .properties files
 use File::Basename;     # for path name parsing
+use Captcha::reCAPTCHA; # for protection against spams
 use Cwd 'abs_path';
 
 # Global configuration paramters
@@ -66,19 +67,26 @@ my $protocol = 'http://';
 if ( $properties->getProperty('server.httpPort') eq '443' ) {
 	$protocol = 'https://';
 }
-my $contextUrl = $protocol . $properties->getProperty('server.name');
+my $serverUrl = $protocol . $properties->getProperty('server.name');
 if ($properties->getProperty('server.httpPort') ne '80') {
-        $contextUrl = $contextUrl . ':' . $properties->getProperty('server.httpPort');
+        $serverUrl = $serverUrl . ':' . $properties->getProperty('server.httpPort');
 }
-$contextUrl = $contextUrl . '/' .  $properties->getProperty('application.context');
+my $context = $properties->getProperty('application.context');
+my $contextUrl = $serverUrl . '/' .  $context;
 
 my $metacatUrl = $contextUrl . "/metacat";
-my $cgiPrefix = "/" . $properties->getProperty('application.context') . "/cgi-bin";
+my $cgiPrefix = "/" . $context . "/cgi-bin";
 my $styleSkinsPath = $contextUrl . "/style/skins";
 my $styleCommonPath = $contextUrl . "/style/common";
 
+#recaptcha key information
+my $recaptchaPublicKey=$properties->getProperty('ldap.recaptcha.publickey');
+my $recaptchaPrivateKey=$properties->getProperty('ldap.recaptcha.privatekey');
+
 my @errorMessages;
 my $error = 0;
+
+my $emailVerification= 'emailverification';
 
 # Import all of the HTML form fields as variables
 import_names('FORM');
@@ -176,12 +184,15 @@ my $template = Template->new($ttConfig) || handleGeneralServerFailure($Template:
 # custom LDAP properties hash
 my $ldapCustom = $properties->splitToTree(qr/\./, 'ldap');
 
+# This is a hash which has the keys of the organization's properties 'name', 'base', 'organization'.
 my $orgProps = $properties->splitToTree(qr/\./, 'organization');
+
+#This is a hash which has the keys of the ldap sub tree names of the organizations, such as 'NCEAS', 'LTER' and 'KU', and values are real name of the organization.
 my $orgNames = $properties->splitToTree(qr/\./, 'organization.name');
 # pull out properties available e.g. 'name', 'base'
 my @orgData = keys(%$orgProps);
 
-my @orgList;
+my @orgList; #An array has the names (i.e, sub tree names, such as 'NCEAS', 'LTER' and 'KU')  of the all organizations in the metacat.properties. 
 while (my ($oKey, $oVal) = each(%$orgNames)) {
     push(@orgList, $oKey);
 }
@@ -214,7 +225,8 @@ foreach my $o (@orgList) {
             $ldapConfig->{$o}{'org'} = $filter;
         }
         if (!$ldapConfig->{$o}{'filter'}) {
-            $ldapConfig->{$o}{'filter'} = $filter;
+            #$ldapConfig->{$o}{'filter'} = $filter;
+            $ldapConfig->{$o}{'filter'} = $ldapConfig->{$o}{'org'};
         }
         # also include DN, which is just org + base
         if ($ldapConfig->{$o}{'org'}) {
@@ -238,6 +250,35 @@ foreach my $o (@orgList) {
         $ldapConfig->{$o}{'password'} = $ldapConfig->{'unaffiliated'}{'password'};
     }
 }
+
+### Determine the display organization list (such as NCEAS, Account ) in the ldap template files
+my $displayOrgListStr;
+$displayOrgListStr = $skinProperties->getProperty("ldap.templates.organizationList") or $displayOrgListStr = $properties->getProperty('ldap.templates.organizationList');
+debug("the string of the org from properties : " . $displayOrgListStr);
+my @displayOrgList = split(';', $displayOrgListStr);
+
+my @validDisplayOrgList; #this array contains the org list which will be shown in the templates files.
+
+my %orgNamesHash = %$orgNames;
+foreach my $element (@displayOrgList) {
+    if(exists $orgNamesHash{$element}) {
+         debug("push the organization " . $element . " into the dispaly array");
+         #if the name is found in the organization part of metacat.properties, put it into the valid array
+         push(@validDisplayOrgList, $element);
+    } 
+    
+}
+
+if(!@validDisplayOrgList) {
+     my $sender;
+     $sender = $skinProperties->getProperty("email.sender") or $sender = $properties->getProperty('email.sender');
+    print "Content-type: text/html\n\n";
+    print "The value of property ldap.templates.organizationList in " 
+     . $skinName . ".properties file or metacat.properties file (if the property doesn't exist in the " 
+     . $skinName . ".properties file) is invalid. Please send the information to ". $sender;
+    exit(0);
+}
+
 
 #--------------------------------------------------------------------------80c->
 # Define the main program logic that calls subroutines to do the work
@@ -263,6 +304,9 @@ my %stages = (
               'initchangepass'    => \&handleInitialChangePassword,
               'resetpass'         => \&handleResetPassword,
               'initresetpass'     => \&handleInitialResetPassword,
+              'emailverification' => \&handleEmailVerification,
+              'lookupname'        => \&handleLookupName,
+              'searchnamesbyemail'=> \&handleSearchNameByEmail,
              );
 
 # call the appropriate routine based on the stage
@@ -279,7 +323,14 @@ if ( $stages{$stage} ) {
 sub fullTemplate {
     my $templateList = shift;
     my $templateVars = setVars(shift);
-
+    my $c = Captcha::reCAPTCHA->new;
+    my $captcha = 'captcha';
+    #my $error=null;
+    my $use_ssl= 1;
+    #my $options=null;
+    # use the AJAX style, only need to provide the public key to the template
+    $templateVars->{'recaptchaPublicKey'} = $recaptchaPublicKey;
+    #$templateVars->{$captcha} = $c->get_html($recaptchaPublicKey,undef, $use_ssl, undef);
     $template->process( $templates->{'header'}, $templateVars );
     foreach my $tmpl (@{$templateList}) {
         $template->process( $templates->{$tmpl}, $templateVars );
@@ -287,17 +338,100 @@ sub fullTemplate {
     $template->process( $templates->{'footer'}, $templateVars );
 }
 
+
+#
+# Initialize a form for a user to request the account name associated with an email address
+#
+sub handleLookupName {
+    
+    print "Content-type: text/html\n\n";
+    # process the template files:
+    fullTemplate(['lookupName']); 
+    exit();
+}
+
+#
+# Handle the user's request to look up account names with a specified email address.
+# This relates to "Forget your user name"
+#
+sub handleSearchNameByEmail{
+
+    print "Content-type: text/html\n\n";
+   
+    my $allParams = {'mail' => $query->param('mail')};
+    my @requiredParams = ('mail');
+    if (! paramsAreValid(@requiredParams)) {
+        my $errorMessage = "Required information is missing. " .
+            "Please fill in all required fields and resubmit the form.";
+        fullTemplate(['lookupName'], { allParams => $allParams,
+                                     errorMessage => $errorMessage });
+        exit();
+    }
+    my $mail = $query->param('mail');
+    
+    #search accounts with the specified emails 
+    $searchBase = $authBase; 
+    my $filter = "(mail=" . $mail . ")";
+    my @attrs = [ 'uid', 'o', 'ou', 'cn', 'mail', 'telephoneNumber', 'title' ];
+    my $notHtmlFormat = 1;
+    my $found = findExistingAccounts($ldapurl, $searchBase, $filter, \@attrs, $notHtmlFormat);
+    my $accountInfo;
+    if ($found) {
+        $accountInfo = $found;
+    } else {
+        $accountInfo = "There are no accounts associated with the email " . $mail . ".\n";
+    }
+
+    my $mailhost = $properties->getProperty('email.mailhost');
+    my $sender;
+    $sender = $skinProperties->getProperty("email.sender") or $sender = $properties->getProperty('email.sender');
+    debug("the sender is " . $sender);
+    my $recipient = $query->param('mail');
+    # Send the email message to them
+    my $smtp = Net::SMTP->new($mailhost) or do {  
+                                                  fullTemplate( ['lookupName'], {allParams => $allParams, 
+                                                                errorMessage => "Our mail server currently is experiencing some difficulties. Please contact " . 
+                                                                $skinProperties->getProperty("email.recipient") . "." });  
+                                                  exit(0);
+                                               };
+    $smtp->mail($sender);
+    $smtp->to($recipient);
+
+    my $message = <<"     ENDOFMESSAGE";
+    To: $recipient
+    From: $sender
+    Subject: Your Account Information
+        
+    Somebody (hopefully you) looked up the account information associated with the email address.  
+    Here is the account information:
+    
+    $accountInfo
+
+    Thanks,
+        $sender
+    
+     ENDOFMESSAGE
+     $message =~ s/^[ \t\r\f]+//gm;
+    
+     $smtp->data($message);
+     $smtp->quit;
+     fullTemplate( ['lookupNameSuccess'] );
+    
+}
+
+
 #
 # create the initial registration form 
 #
 sub handleInitRegister {
   my $vars = shift;
-
   print "Content-type: text/html\n\n";
   # process the template files:
   fullTemplate(['register'], {stage => "register"}); 
   exit();
 }
+
+
 
 #
 # process input from the register stage, which occurs when
@@ -305,8 +439,13 @@ sub handleInitRegister {
 #
 sub handleRegister {
     
-    print "Content-type: text/html\n\n";
-
+    #print "Content-type: text/html\n\n";
+    if ($query->param('o') =~ "LTER") {
+      print "Content-type: text/html\n\n";
+      fullTemplate( ['registerLter'] );
+      exit(0);
+    } 
+    
     my $allParams = { 'givenName' => $query->param('givenName'), 
                       'sn' => $query->param('sn'),
                       'o' => $query->param('o'), 
@@ -316,10 +455,36 @@ sub handleRegister {
                       'userPassword2' => $query->param('userPassword2'), 
                       'title' => $query->param('title'), 
                       'telephoneNumber' => $query->param('telephoneNumber') };
+    
+    # Check the recaptcha
+    my $c = Captcha::reCAPTCHA->new;
+    my $challenge = $query->param('recaptcha_challenge_field');
+    my $response = $query->param('recaptcha_response_field');
+    # Verify submission
+    my $result = $c->check_answer(
+        $recaptchaPrivateKey, $ENV{'REMOTE_ADDR'},
+        $challenge, $response
+    );
+
+    if ( $result->{is_valid} ) {
+        #print "Yes!";
+        #exit();
+    }
+    else {
+        print "Content-type: text/html\n\n";
+        my $errorMessage = "The verification code is wrong. Please input again.";
+        fullTemplate(['register'], { stage => "register",
+                                     allParams => $allParams,
+                                     errorMessage => $errorMessage });
+        exit();
+    }
+    
+    
     # Check that all required fields are provided and not null
     my @requiredParams = ( 'givenName', 'sn', 'o', 'mail', 
                            'uid', 'userPassword', 'userPassword2');
     if (! paramsAreValid(@requiredParams)) {
+        print "Content-type: text/html\n\n";
         my $errorMessage = "Required information is missing. " .
             "Please fill in all required fields and resubmit the form.";
         fullTemplate(['register'], { stage => "register",
@@ -327,6 +492,14 @@ sub handleRegister {
                                      errorMessage => $errorMessage });
         exit();
     } else {
+         if ($query->param('userPassword') ne $query->param('userPassword2')) {
+            print "Content-type: text/html\n\n";
+            my $errorMessage = "The passwords do not match. Try again.";
+            fullTemplate( ['registerFailed', 'register'], { stage => "register",
+                                                            allParams => $allParams,
+                                                            errorMessage => $errorMessage });
+            exit();
+        }
         my $o = $query->param('o');    
         $searchBase = $ldapConfig->{$o}{'base'};  
     }
@@ -352,17 +525,18 @@ sub handleRegister {
                 ")";
     }
 
-    my @attrs = [ 'uid', 'o', 'cn', 'mail', 'telephoneNumber', 'title' ];
+    my @attrs = [ 'uid', 'o', 'ou', 'cn', 'mail', 'telephoneNumber', 'title' ];
     my $found = findExistingAccounts($ldapurl, $searchBase, $filter, \@attrs);
 
     # If entries match, send back a request to confirm new-user creation
     if ($found) {
+      print "Content-type: text/html\n\n";
       fullTemplate( ['registerMatch', 'register'], { stage => "registerconfirmed",
                                                      allParams => $allParams,
                                                      foundAccounts => $found });
     # Otherwise, create a new user in the LDAP directory
     } else {
-        createAccount($allParams);
+        createTemporaryAccount($allParams);
     }
 
     exit();
@@ -377,15 +551,15 @@ sub handleRegisterConfirmed {
   
     my $allParams = { 'givenName' => $query->param('givenName'), 
                       'sn' => $query->param('sn'),
-                      'o' => 'unaffiliated', # only accept unaffiliated registration
+                      'o' => $query->param('o'), 
                       'mail' => $query->param('mail'), 
                       'uid' => $query->param('uid'), 
                       'userPassword' => $query->param('userPassword'), 
                       'userPassword2' => $query->param('userPassword2'), 
                       'title' => $query->param('title'), 
                       'telephoneNumber' => $query->param('telephoneNumber') };
-    print "Content-type: text/html\n\n";
-    createAccount($allParams);
+    #print "Content-type: text/html\n\n";
+    createTemporaryAccount($allParams);
     exit();
 }
 
@@ -701,8 +875,10 @@ sub sendPasswordNotification {
 
     my $errorMessage = "";
     if ($recipient) {
+    
         my $mailhost = $properties->getProperty('email.mailhost');
-        my $sender =  $properties->getProperty('email.sender');
+        my $sender;
+        $sender = $skinProperties->getProperty("email.sender") or $sender = $properties->getProperty('email.sender');
         # Send the email message to them
         my $smtp = Net::SMTP->new($mailhost);
         $smtp->mail($sender);
@@ -711,20 +887,18 @@ sub sendPasswordNotification {
         my $message = <<"        ENDOFMESSAGE";
         To: $recipient
         From: $sender
-        Subject: KNB Password Reset
+        Subject: Your Account Password Reset
         
-        Somebody (hopefully you) requested that your KNB password be reset.  
-        This is generally done when somebody forgets their password.  Your 
-        password can be changed by visiting the following URL:
-
-        $contextUrl/cgi-bin/ldapweb.cgi?stage=changepass&cfg=$cfg
+        Somebody (hopefully you) requested that your account password be reset.  
+        Your temporary password is below. Please change it as soon as possible 
+        at: $contextUrl.
 
             Username: $username
         Organization: $org
         New Password: $newPass
 
         Thanks,
-            The KNB Development Team
+            $sender
     
         ENDOFMESSAGE
         $message =~ s/^[ \t\r\f]+//gm;
@@ -746,6 +920,7 @@ sub findExistingAccounts {
     my $base = shift;
     my $filter = shift;
     my $attref = shift;
+    my $notHtmlFormat = shift;
     my $ldap;
     my $mesg;
 
@@ -769,18 +944,35 @@ sub findExistingAccounts {
 			foreach $entry ($mesg->all_entries) { 
                 # a fix to ignore 'ou=Account' properties which are not usable accounts within Metacat.
                 # this could be done directly with filters on the LDAP connection, instead.
-                if ($entry->dn !~ /ou=Account/) {
-                    $foundAccounts .= "<p>\n<b><u>Account:</u> ";
+                #if ($entry->dn !~ /ou=Account/) {
+                    if($notHtmlFormat) {
+                        $foundAccounts .= "\nAccount: ";
+                    } else {
+                        $foundAccounts .= "<p>\n<b><u>Account:</u> ";
+                    }
                     $foundAccounts .= $entry->dn();
-                    $foundAccounts .= "</b><br />\n";
+                    if($notHtmlFormat) {
+                        $foundAccounts .= "\n";
+                    } else {
+                        $foundAccounts .= "</b><br />\n";
+                    }
                     foreach my $attribute ($entry->attributes()) {
                         my $value = $entry->get_value($attribute);
                         $foundAccounts .= "$attribute: ";
                         $foundAccounts .= $value;
-                        $foundAccounts .= "<br />\n";
+                         if($notHtmlFormat) {
+                            $foundAccounts .= "\n";
+                        } else {
+                            $foundAccounts .= "<br />\n";
+                        }
                     }
-                    $foundAccounts .= "</p>\n";
-                }
+                    if($notHtmlFormat) {
+                        $foundAccounts .= "\n";
+                    } else {
+                        $foundAccounts .= "</p>\n";
+                    }
+                    
+                #}
 			}
         }
     	$ldap->unbind;   # take down session
@@ -792,7 +984,7 @@ sub findExistingAccounts {
         	my $host = $uri->host();
         	my $path = $uri->path();
         	$path =~ s/^\///;
-        	my $refFound = &findExistingAccounts($host, $path, $filter, $attref);
+        	my $refFound = &findExistingAccounts($host, $path, $filter, $attref, $notHtmlFormat);
         	if ($refFound) {
             	$foundAccounts .= $refFound;
         	}
@@ -828,88 +1020,292 @@ sub paramsAreValid {
 }
 
 #
-# Bind to LDAP and create a new account using the information provided
-# by the user
+# Create a temporary account for a user and send an email with a link which can click for the
+# verification. This is used to protect the ldap server against spams.
 #
-sub createAccount {
+sub createTemporaryAccount {
     my $allParams = shift;
+    my $org = $query->param('o'); 
+    my $ldapUsername = $ldapConfig->{$org}{'user'};
+    my $ldapPassword = $ldapConfig->{$org}{'password'};
+    my $tmp = 1;
 
-    if ($query->param('o') =~ "LTER") {
-        fullTemplate( ['registerLter'] );
+    ################## Search LDAP to see if the dc=tmp which stores the inactive accounts exist or not. If it doesn't exist, it will be generated
+    my $orgAuthBase = $ldapConfig->{$org}{'base'};
+    my $tmpSearchBase = 'dc=tmp,' . $orgAuthBase; 
+    my $tmpFilter = "dc=tmp";
+    my @attributes=['dc'];
+    my $foundTmp = searchDirectory($ldapurl, $orgAuthBase, $tmpFilter, \@attributes);
+    if (!$foundTmp) {
+        my $dn = $tmpSearchBase;
+        my $additions = [ 
+                    'dc' => 'tmp',
+                    'o'  => 'tmp',
+                    'objectclass' => ['top', 'dcObject', 'organization']
+                    ];
+        createItem($dn, $ldapUsername, $ldapPassword, $additions, $tmp, $allParams);
     } else {
+     debug("found the tmp space");
+    }
+    
+    ################## Search LDAP for matching o or ou under the dc=tmp that already exist. If it doesn't exist, it will be generated
+    my $filter = $ldapConfig->{$org}{'filter'};   
+    
+    debug("search filer " . $filter);
+    debug("ldap server ". $ldapurl);
+    debug("sesarch base " . $tmpSearchBase);
+    #print "Content-type: text/html\n\n";
+    my @attrs = ['o', 'ou' ];
+    my $found = searchDirectory($ldapurl, $tmpSearchBase, $filter, \@attrs);
 
-        # Be sure the passwords match
-        if ($query->param('userPassword') !~ $query->param('userPassword2')) {
-            my $errorMessage = "The passwords do not match. Try again.";
-            fullTemplate( ['registerFailed', 'register'], { stage => "register",
-                                                            allParams => $allParams,
-                                                            errorMessage => $errorMessage });
-            exit();
-        }
-
-        my $o = $query->param('o');
-
-        my $searchBase = $ldapConfig->{$o}{'base'};
-        my $dnBase = $ldapConfig->{$o}{'dn'};
-        my $ldapUsername = $ldapConfig->{$o}{'user'};
-        my $ldapPassword = $ldapConfig->{$o}{'password'};
-        debug("LDAP connection to $ldapurl...");    
-        #if main ldap server is down, a html file containing warning message will be returned
-        my $ldap = Net::LDAP->new($ldapurl, timeout => $timeout) or handleLDAPBindFailure($ldapurl);
+    my @organizationInfo = split('=', $ldapConfig->{$org}{'org'}); #split 'o=NCEAS' or something like that
+    my $organization = $organizationInfo[0]; # This will be 'o' or 'ou'
+    my $organizationName = $organizationInfo[1]; # This will be 'NCEAS' or 'Account'
         
-        if ($ldap) {
-        	$ldap->start_tls( verify => 'none');
-        	debug("Attempting to bind to LDAP server with dn = $ldapUsername, pwd = $ldapPassword");
-        	$ldap->bind( version => 3, dn => $ldapUsername, password => $ldapPassword );
-        
-        	my $dn = 'uid=' . $query->param('uid') . ',' . $dnBase;
-        	debug("Inserting new entry for: $dn");
-
-        	# Create a hashed version of the password
-        	my $shapass = createSeededPassHash($query->param('userPassword'));
-
-        	# Do the insertion
-        	my $additions = [ 
+    if(!$found) {
+        debug("generate the subtree in the dc=tmp===========================");
+        #need to generate the subtree o or ou
+        my $additions;
+            if($organization eq 'ou') {
+                $additions = [ 
+                    $organization   => $organizationName,
+                    'objectclass' => ['top', 'organizationalUnit']
+                    ];
+            
+            } else {
+                $additions = [ 
+                    $organization   => $organizationName,
+                    'objectclass' => ['top', 'organization']
+                    ];
+            
+            } 
+        my $dn=$ldapConfig->{$org}{'org'} . ',' . $tmpSearchBase;
+        createItem($dn, $ldapUsername, $ldapPassword, $additions, $tmp, $allParams);
+    } 
+    
+    ################create an account under tmp subtree 
+    
+    #generate a randomstr for matching the email.
+    my $randomStr = getRandomPassword(16);
+    # Create a hashed version of the password
+    my $shapass = createSeededPassHash($query->param('userPassword'));
+    my $additions = [ 
                 'uid'   => $query->param('uid'),
-                'o'   => $query->param('o'),
                 'cn'   => join(" ", $query->param('givenName'), 
                                     $query->param('sn')),
                 'sn'   => $query->param('sn'),
                 'givenName'   => $query->param('givenName'),
                 'mail' => $query->param('mail'),
                 'userPassword' => $shapass,
+                'employeeNumber' => $randomStr,
                 'objectclass' => ['top', 'person', 'organizationalPerson', 
-                                'inetOrgPerson', 'uidObject' ]
-            	];
-        	if (defined($query->param('telephoneNumber')) && 
-            	$query->param('telephoneNumber') &&
-            	! $query->param('telephoneNumber') =~ /^\s+$/) {
-            	$$additions[$#$additions + 1] = 'telephoneNumber';
-            	$$additions[$#$additions + 1] = $query->param('telephoneNumber');
-        	}
-        	if (defined($query->param('title')) && 
-            	$query->param('title') &&
-            	! $query->param('title') =~ /^\s+$/) {
-            	$$additions[$#$additions + 1] = 'title';
-            	$$additions[$#$additions + 1] = $query->param('title');
-        	}
-        	my $result = $ldap->add ( 'dn' => $dn, 'attr' => [ @$additions ]);
+                                'inetOrgPerson', 'uidObject' ],
+                $organization   => $organizationName
+                ];
+    if (defined($query->param('telephoneNumber')) && 
+                $query->param('telephoneNumber') &&
+                ! $query->param('telephoneNumber') =~ /^\s+$/) {
+                $$additions[$#$additions + 1] = 'telephoneNumber';
+                $$additions[$#$additions + 1] = $query->param('telephoneNumber');
+    }
+    if (defined($query->param('title')) && 
+                $query->param('title') &&
+                ! $query->param('title') =~ /^\s+$/) {
+                $$additions[$#$additions + 1] = 'title';
+                $$additions[$#$additions + 1] = $query->param('title');
+    }
+
     
-        	if ($result->code()) {
-            	fullTemplate( ['registerFailed', 'register'], { stage => "register",
+    #$$additions[$#$additions + 1] = 'o';
+    #$$additions[$#$additions + 1] = $org;
+    my $dn='uid=' . $query->param('uid') . ',' . $ldapConfig->{$org}{'org'} . ',' . $tmpSearchBase;
+    createItem($dn, $ldapUsername, $ldapPassword, $additions, $tmp, $allParams);
+    
+    
+    ####################send the verification email to the user
+    my $link = '/' . $context . '/cgi-bin/ldapweb.cgi?cfg=' . $skinName . '&' . 'stage=' . $emailVerification . '&' . 'dn=' . $dn . '&' . 'hash=' . $randomStr . '&o=' . $org . '&uid=' . $query->param('uid'); #even though we use o=something. The emailVerification will figure the real o= or ou=something.
+    
+    my $overrideURL;
+    $overrideURL = $skinProperties->getProperty("email.overrideURL");
+    debug("the overrideURL is " . $overrideURL);
+    if (defined($overrideURL) && !($overrideURL eq '')) {
+    	$link = $serverUrl . $overrideURL . $link;
+    } else {
+    	$link = $serverUrl . $link;
+    }
+    
+    my $mailhost = $properties->getProperty('email.mailhost');
+    my $sender;
+    $sender = $skinProperties->getProperty("email.sender") or $sender = $properties->getProperty('email.sender');
+    debug("the sender is " . $sender);
+    my $recipient = $query->param('mail');
+    # Send the email message to them
+    my $smtp = Net::SMTP->new($mailhost) or do {  
+                                                  fullTemplate( ['registerFailed'], {errorMessage => "The temporary account " . $dn . " was created successfully. However, the vertification email can't be sent to you because the email server has some issues. Please contact " . 
+                                                  $skinProperties->getProperty("email.recipient") . "." });  
+                                                  exit(0);
+                                               };
+    $smtp->mail($sender);
+    $smtp->to($recipient);
+
+    my $message = <<"     ENDOFMESSAGE";
+    To: $recipient
+    From: $sender
+    Subject: New Account Activation
+        
+    Somebody (hopefully you) registered an account on $contextUrl.  
+    Please click the following link to activate your account.
+    If the link doesn't work, please copy the link to your browser:
+    
+    $link
+
+    Thanks,
+        $sender
+    
+     ENDOFMESSAGE
+     $message =~ s/^[ \t\r\f]+//gm;
+    
+     $smtp->data($message);
+     $smtp->quit;
+    debug("the link is " . $link);
+    fullTemplate( ['success'] );
+    
+}
+
+#
+# Bind to LDAP and create a new item (a user or subtree) using the information provided
+# by the user
+#
+sub createItem {
+    my $dn = shift;
+    my $ldapUsername = shift;
+    my $ldapPassword = shift;
+    my $additions = shift;
+    my $temp = shift; #if it is for a temporary account.
+    my $allParams = shift;
+    
+    my @failureTemplate;
+    if($temp){
+        @failureTemplate = ['registerFailed', 'register'];
+    } else {
+        @failureTemplate = ['registerFailed'];
+    }
+    print "Content-type: text/html\n\n";
+    debug("the dn is " . $dn);
+    debug("LDAP connection to $ldapurl...");    
+    #if main ldap server is down, a html file containing warning message will be returned
+    my $ldap = Net::LDAP->new($ldapurl, timeout => $timeout) or handleLDAPBindFailure($ldapurl);
+    if ($ldap) {
+            $ldap->start_tls( verify => 'none');
+            debug("Attempting to bind to LDAP server with dn = $ldapUsername, pwd = $ldapPassword");
+            $ldap->bind( version => 3, dn => $ldapUsername, password => $ldapPassword ); 
+            my $result = $ldap->add ( 'dn' => $dn, 'attr' => [@$additions ]);
+            if ($result->code()) {
+                fullTemplate(@failureTemplate, { stage => "register",
                                                             allParams => $allParams,
                                                             errorMessage => $result->error });
-            	# TODO SCW was included as separate errors, test this
-           	 	#$templateVars    = setVars({ stage => "register",
-           	 	#                     allParams => $allParams });
-            	#$template->process( $templates->{'register'}, $templateVars);
-        	} else {
-            	fullTemplate( ['success'] );
-        	}
-
-        	$ldap->unbind;   # take down session
-        }
+                exist(0);
+                # TODO SCW was included as separate errors, test this
+                #$templateVars    = setVars({ stage => "register",
+                #                     allParams => $allParams });
+                #$template->process( $templates->{'register'}, $templateVars);
+            } else {
+                #fullTemplate( ['success'] );
+            }
+            $ldap->unbind;   # take down session
+            
+    } else {   
+         fullTemplate(@failureTemplate, { stage => "register",
+                                                            allParams => $allParams,
+                                                            errorMessage => "The ldap server is not available now. Please try it later"});
+         exit(0);
     }
+  
+}
+
+
+
+
+
+
+#
+# This subroutine will handle a email verification:
+# If the hash string matches the one store in the ldap, the account will be
+# copied from the temporary space to the permanent tree and the account in 
+# the temporary space will be removed.
+sub handleEmailVerification {
+
+    my $cfg = $query->param('cfg');
+    my $dn = $query->param('dn');
+    my $hash = $query->param('hash');
+    my $org = $query->param('o');
+    my $uid = $query->param('uid');
+    
+    my $ldapUsername;
+    my $ldapPassword;
+    #my $orgAuthBase;
+
+    $ldapUsername = $ldapConfig->{$org}{'user'};
+    $ldapPassword = $ldapConfig->{$org}{'password'};
+    #$orgAuthBase = $ldapConfig->{$org}{'base'};
+    
+    debug("LDAP connection to $ldapurl...");    
+    
+
+   print "Content-type: text/html\n\n";
+   #if main ldap server is down, a html file containing warning message will be returned
+   my $ldap = Net::LDAP->new($ldapurl, timeout => $timeout) or handleLDAPBindFailure($ldapurl);
+   if ($ldap) {
+        $ldap->start_tls( verify => 'none');
+        $ldap->bind( version => 3, dn => $ldapUsername, password => $ldapPassword );
+        my $mesg = $ldap->search(base => $dn, scope => 'base', filter => '(objectClass=*)'); #This dn is with the dc=tmp. So it will find out the temporary account registered in registration step.
+        my $max = $mesg->count;
+        debug("the count is " . $max);
+        if($max < 1) {
+            $ldap->unbind;   # take down session
+            fullTemplate( ['verificationFailed'], {errorMessage => "No record matched the dn " . $dn . " for the activation. You probably already activated the account."});
+            #handleLDAPBindFailure($ldapurl);
+            exit(0);
+        } else {
+            #check if the hash string match
+            my $entry = $mesg->entry (0);
+            my $hashStrFromLdap = $entry->get_value('employeeNumber');
+            if( $hashStrFromLdap eq $hash) {
+                #my $additions = [ ];
+                #foreach my $attr ( $entry->attributes ) {
+                    #if($attr ne 'employeeNumber') {
+                        #$$additions[$#$additions + 1] = $attr;
+                        #$$additions[$#$additions + 1] = $entry->get_value( $attr );
+                    #}
+                #}
+
+                
+                my $orgDn = $ldapConfig->{$org}{'dn'}; #the DN for the organization.
+                $mesg = $ldap->moddn(
+                            dn => $dn,
+                            deleteoldrdn => 1,
+                            newrdn => "uid=" . $uid,
+                            newsuperior  =>  $orgDn);
+                $ldap->unbind;   # take down session
+                if($mesg->code()) {
+                    fullTemplate( ['verificationFailed'], {errorMessage => "Cannot move the account from the inactive area to the ative area since " . $mesg->error()});
+                    exit(0);
+                } else {
+                    fullTemplate( ['verificationSuccess'] );
+                }
+                #createAccount2($dn, $ldapUsername, $ldapPassword, $additions, $tmp, $allParams);
+            } else {
+                $ldap->unbind;   # take down session
+                fullTemplate( ['verificationFailed'], {errorMessage => "The hash string " . $hash . " from your link doesn't match our record."});
+                exit(0);
+            }
+            
+        }
+    } else {   
+        handleLDAPBindFailure($ldapurl);
+        exit(0);
+    }
+
 }
 
 sub handleResponseMessage {
@@ -1085,7 +1481,7 @@ sub setVars {
                          styleCommonPath => $contextUrl . "/style/common",
                          contextUrl => $contextUrl,
                          cgiPrefix => $cgiPrefix,
-                         orgList => \@orgList,
+                         orgList => \@validDisplayOrgList,
                          config  => $config,
     };
     
@@ -1096,3 +1492,4 @@ sub setVars {
     
     return $templateVars;
 } 
+

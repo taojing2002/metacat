@@ -2,20 +2,21 @@
     [% CASE 'register' %]
     
     
-    <h3>Register for the KNB</h3>
+    <h3>Account Registration</h3>
     
     <table class="intro" cellpadding="3" cellspacing="0">   
-       <tr><td align="left">
-       <span class="regtext">
-       Fill out the form below to register for the KNB. 
-       By registering, you will be assigned a user account that allows you to store your
-       own data as part of the KNB and to collaborate with other research 
-       scientists through the KNB.</td></tr>
-	<tr><td align="left">
-		<strong>Note: </strong>To create an account affiliated with an organization such as OBFS, UCNRS, KU, LTER, UVM, NCEAS, OSUSB, SDSC or NAPIER contact tech support. 
-		Emails are: tech_support@lternet.edu for LTER, infomgr@ucnrs.org for UCNRS, judithk@sanparks.org for SANParks and SAEON and knb-help@nceas.ucsb.edu for other organizations.</td></tr>
-       <tr><td align="left"><span class="label">Required fields are denoted by an asterisk (*).</td></tr>
-       
+		<tr><td align="left">
+			<span class="regtext">
+			Fill out the form below to register your account. 
+			A verification email will be sent with instructions to activate your account after you have registered.
+		</td></tr>
+		<!--
+		<tr><td align="left">
+			<strong>Note: </strong>To create an account affiliated with an organization such as OBFS, UCNRS, KU, LTER, UVM, NCEAS, OSUSB, SDSC or NAPIER contact tech support. 
+			Emails are: tech_support@lternet.edu for LTER, infomgr@ucnrs.org for UCNRS, judithk@sanparks.org for SANParks and SAEON and knb-help@nceas.ucsb.edu for other organizations.
+		</td></tr>
+		-->       
+		<tr><td align="left"><span class="label">Required fields are denoted by an asterisk (*).</td></tr>
     </table>
     <p>&nbsp;</p>
     
@@ -98,8 +99,14 @@
                    value="[% allParams.o %]"/>
             [% ELSE %]
             <select name="o">
-                  <option value="unaffiliated">unaffiliated</option>
-            </select>
+                [% FOREACH org = orgList %]
+                  [% IF allParams.o == org %]
+                    <option value="[% org %]" selected>[% org %]</option>
+                  [% ELSE %]
+                    <option value="[% org %]">[% org %]</option>
+                  [% END %]
+                [% END %]
+               </select>
             [% END %]
           </td>
         </tr>
@@ -181,6 +188,28 @@
             [% END %]
           </td>
         </tr>
+        [% IF stage == 'register' %]
+            <tr>
+                <td align="left" class="label">
+                    *Verification Code:
+                </td>
+                <td align="right">
+                	<div id="captchaArea">
+                            <a onclick="showRecaptcha('captchaArea');">Show Code</a>
+                    </div>
+                    <script type="text/javascript" src="https://www.google.com/recaptcha/api/js/recaptcha_ajax.js"></script>
+                    <script type="text/javascript">
+	                    function showRecaptcha(element) {
+	                            Recaptcha.create("[% recaptchaPublicKey %]", element, {
+	                            theme: "clean",
+	                            callback: Recaptcha.focus_response_field});
+	                            return false;
+	                    }
+                    </script>
+                </td>
+            </tr>
+        [% END %]
+        
         <tr>
           <td>
           </td>

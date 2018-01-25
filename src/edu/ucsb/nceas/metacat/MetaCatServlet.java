@@ -646,6 +646,10 @@ public class MetaCatServlet extends HttpServlet {
 		Logger logMetacat = Logger.getLogger(MetaCatServlet.class);
 
 		String requestEncoding = request.getCharacterEncoding();
+		if (requestEncoding == null) {
+			logMetacat.debug("null requestEncoding, setting to application default: " + DEFAULT_ENCODING);
+			request.setCharacterEncoding(DEFAULT_ENCODING);
+		}
 		logMetacat.debug("requestEncoding: " + requestEncoding);
 		
 		// Update the last update time for this user if they are not new
@@ -711,8 +715,8 @@ public class MetaCatServlet extends HttpServlet {
 			// Check if this is a simple read request that doesn't use the
 			// "action" syntax
 			// These URLs are of the form:
-			// http://localhost:8180/knb/metacat/docid/skinname
-			// e.g., http://localhost:8180/knb/metacat/test.1.1/knb
+			// http://localhost:8180/metacat/metacat/docid/skinname
+			// e.g., http://localhost:8180/metacat/metacat/test.1.1/knb
 			String pathInfo = request.getPathInfo();
 			if (pathInfo != null) {
 				String[] path = pathInfo.split("/");

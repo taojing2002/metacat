@@ -1,14 +1,6 @@
 /**
- *  '$RCSfile$'
- *    Purpose: A class that gets Accession Number, check for uniqueness
- *             and register it into db
- *  Copyright: 2000 Regents of the University of California and the
+ *  Copyright: 2013 Regents of the University of California and the
  *             National Center for Ecological Analysis and Synthesis
- *    Authors: Jivka Bojilova, Matt Jones
- *
- *   '$Author: leinfelder $'
- *     '$Date: 2011-11-02 20:40:12 -0700 (Wed, 02 Nov 2011) $'
- * '$Revision: 6595 $'
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -53,6 +45,8 @@ public class SystemMetadataEventListener implements ItemListener<SystemMetadata>
 	private static Log log = LogFactory.getLog(SystemMetadataEventListener.class);
 	
 	private SolrIndex solrIndex = null;
+	
+	private ISet<SystemMetadata> source = null;
 	        
     /**
      * Default constructor - caller needs to initialize manually
@@ -102,6 +96,7 @@ public class SystemMetadataEventListener implements ItemListener<SystemMetadata>
         IMap<Identifier, String> objectPathMap = DistributedMapsFactory.getObjectPathMap();
         ISet<SystemMetadata> indexQueue = DistributedMapsFactory.getIndexQueue();
         indexQueue.addItemListener(this, true);
+        this.source = indexQueue;
         log.info("System Metadata size: " + indexQueue.size());
         log.info("Object path size:" + objectPathMap.size());
     }
@@ -143,20 +138,7 @@ public class SystemMetadataEventListener implements ItemListener<SystemMetadata>
     
 
 	public void itemRemoved(ItemEvent<SystemMetadata> entryEvent) {
-		// remove from the index
-		Identifier pid = entryEvent.getItem().getIdentifier();
-		if(pid != null) {
-		    try {
-	            solrIndex.remove(pid.getValue());
-	        } catch (Exception e) {
-	            String error = "SystemMetadataEventListener.itemRemoved - couldn't remove the index for the pid "+pid.getValue()+" since "+e.getMessage();
-	            SystemMetadata systemMetadata = entryEvent.getItem();
-	            writeEventLog(systemMetadata, pid, error);
-	            log.error(error, e);
-	        }
-		}
-		
-		
+		// do nothing - indexing acts on added objects, even if they need to be deleted
 	}
 
 	public void itemAdded(ItemEvent<SystemMetadata> entryEvent) {
@@ -171,6 +153,12 @@ public class SystemMetadataEventListener implements ItemListener<SystemMetadata>
 		    writeEventLog(systemMetadata, pid, "SystemMetadataEventListener.itemAdded -could not get the SystemMetadata");
 		    return;
 		}
+		
+		// make sure we remove this object so that it can be re-added in the future
+		if (source != null) {
+			source.remove(systemMetadata);
+		}
+				
 		Identifier obsoletes = systemMetadata.getObsoletes();
 		List<String> obsoletesChain = null;
 		if (obsoletes != null) {
@@ -197,6 +185,7 @@ public class SystemMetadataEventListener implements ItemListener<SystemMetadata>
 	        try {
 	            data = new FileInputStream(objectPath);
 	            solrIndex.update(pid.getValue(), obsoletesChain, systemMetadata, data);
+                EventlogFactory.createIndexEventLog().remove(pid);
 	        } catch (Exception e) {
 	            String error = "SystemMetadataEventListener.itemAdded - could not comit the index into the solr server since " + e.getMessage();
 	            writeEventLog(systemMetadata, pid, error);

@@ -1,15 +1,6 @@
 /**
- *  '$RCSfile$'
- *    Purpose: A class that gets Accession Number, check for uniqueness
- *             and register it into db
- *  Copyright: 2000 Regents of the University of California and the
+ *  Copyright: 2013 Regents of the University of California and the
  *             National Center for Ecological Analysis and Synthesis
- *    Authors: Jivka Bojilova, Matt Jones
- *
- *   '$Author: leinfelder $'
- *     '$Date: 2011-11-02 20:40:12 -0700 (Wed, 02 Nov 2011) $'
- * '$Revision: 6595 $'
- *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -56,7 +47,7 @@ public class MetacatIndexServlet extends HttpServlet {
     
     // Use the file prefix to indicate this is a absolute path.
     // see http://www.docjar.com/docs/api/org/springframework/context/support/FileSystemXmlApplicationContext.html
-    private static final String FILEPREFIX = "file:";
+    //private static final String FILEPREFIX = "file:";
     
 	private static Log log = LogFactory.getLog(MetacatIndexServlet.class);
 
@@ -67,7 +58,7 @@ public class MetacatIndexServlet extends HttpServlet {
         //System.out.println("++++++++++++++++++++++++------------------- start the servlet");
     	//initializeSharedConfiguration(config);
     	// initialize the application using the configured application-context
-        URL url = getClass().getResource("/index-processor-context.xml");
+        //URL url = getClass().getResource("/index-processor-context.xml");
         //find the sibling metacat.properties file
         String metacatPropertiesFilePath = config.getServletContext().getInitParameter("metacat.properties.path");
         File contextDeploymentDir = new File(config.getServletContext().getRealPath("/"));
@@ -77,7 +68,8 @@ public class MetacatIndexServlet extends HttpServlet {
         //System.out.println("the file is "+url.getPath());
         //ApplicationController controller = null;
         try {
-             ApplicationController controller = new ApplicationController(FILEPREFIX + url.getFile(), fullMetacatPropertiesFilePath);
+             //ApplicationController controller = new ApplicationController(FILEPREFIX + url.getFile(), fullMetacatPropertiesFilePath);
+            ApplicationController controller = new ApplicationController("/index-processor-context.xml", fullMetacatPropertiesFilePath);
              //Start the controller in other thread - SystemmetadataEventListener and to generate indexes for those haven't been indexed in another thread
              Thread controllerThread = new Thread(controller);
              controllerThread.start();

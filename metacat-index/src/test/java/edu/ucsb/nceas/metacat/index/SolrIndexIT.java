@@ -46,8 +46,8 @@ public class SolrIndexIT  {
             solrIndex  = generateSolrIndex();
     }
     
-    private SolrIndex generateSolrIndex() throws Exception {
-        String springConfigFile = "src/main/resources/index-processor-context.xml";
+    public static SolrIndex generateSolrIndex() throws Exception {
+        String springConfigFile = "/index-processor-context.xml";
         String metacatPropertyFile = null; //in this test, we use the test.properties file rather than metacat.properties file. so set it to be null.
         ApplicationController controller = new ApplicationController(springConfigFile, metacatPropertyFile);
         controller.initialize();

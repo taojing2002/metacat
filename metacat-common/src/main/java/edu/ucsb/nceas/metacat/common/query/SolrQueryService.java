@@ -1,14 +1,6 @@
 /**
- *  '$RCSfile$'
- *    Purpose: A class that gets Accession Number, check for uniqueness
- *             and register it into db
- *  Copyright: 2000 Regents of the University of California and the
+ *  Copyright: 2013 Regents of the University of California and the
  *             National Center for Ecological Analysis and Synthesis
- *    Authors: Jivka Bojilova, Matt Jones
- *
- *   '$Author: tao $'
- *     '$Date: 2013-04-19 17:47:14 -0700 (Fri, 19 Apr 2013) $'
- * '$Revision: 7595 $'
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,7 +38,7 @@ import edu.ucsb.nceas.metacat.common.query.SolrQueryResponseWriterFactory;
 
 
 /**
- * A query interface for the solr server
+ * An abstract query service class for the solr server
  * @author tao
  *
  */
@@ -82,15 +74,7 @@ public abstract class SolrQueryService {
         supportedWriterTypes.add(SolrQueryResponseWriterFactory.PYTHON);
         supportedWriterTypes.add(SolrQueryResponseWriterFactory.XML);
     }
-    /**
-     * Query the Solr server with specified query and user's identity. If the Subjects
-     * is null, there will be no access rules for the query. This is the for the http solr server.
-     * @param query the query string
-     * @param subjects the user's identity which sent the query
-     * @return the response
-     * @throws Exception
-     */
-    //public abstract InputStream query(String query, Set<Subject>subjects) throws Exception;
+  
     
     /**
      * Query the Solr server with specified query and user's identity. If the Subjects

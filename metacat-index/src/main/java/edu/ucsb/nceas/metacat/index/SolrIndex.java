@@ -1,14 +1,6 @@
 /**
- *  '$RCSfile$'
- *    Purpose: A class that gets Accession Number, check for uniqueness
- *             and register it into db
- *  Copyright: 2000 Regents of the University of California and the
+ *  Copyright: 2013 Regents of the University of California and the
  *             National Center for Ecological Analysis and Synthesis
- *    Authors: Jivka Bojilova, Matt Jones
- *
- *   '$Author: leinfelder $'
- *     '$Date: 2011-11-02 20:40:12 -0700 (Wed, 02 Nov 2011) $'
- * '$Revision: 6595 $'
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -120,7 +112,7 @@ public class SolrIndex {
      * @throws SAXException 
      * @throws IOException 
      */
-    public SolrIndex(List<SolrField> sysmetaSolrFields, XMLNamespaceConfig xmlNamespaceConfig)
+    public SolrIndex(XMLNamespaceConfig xmlNamespaceConfig, List<SolrField> sysmetaSolrFields)
                     throws XPathExpressionException, ParserConfigurationException, IOException, SAXException {
          this.xmlNamespaceConfig = xmlNamespaceConfig;
          this.sysmetaSolrFields = sysmetaSolrFields;

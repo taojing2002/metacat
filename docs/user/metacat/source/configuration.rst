@@ -95,7 +95,7 @@ To edit the authentication configuration file:
 
 1. Stop Tomcat and edit the Metacat properties (``metacat.properties``) file in the
    Metacat context directory inside the Tomcat application directory. The 
-   Metacat context directory is the name of the application (usually knb):
+   Metacat context directory is the name of the application (usually metacat):
 
   ::
   
@@ -147,9 +147,9 @@ each of which is listed with its current status (see table).
 ==============  =============================================================
 Status          Description
 ==============  =============================================================
-[unconfigured]  The section has yet to be configured 
-[configured]    The section has been configured. 
-[bypassed]      The administrator 
+unconfigured    The section has yet to be configured 
+configured      The section has been configured. 
+bypassed        The administrator 
                 can choose not to configure or skip the section.
 ==============  =============================================================
  
@@ -205,7 +205,7 @@ these values are correct.
 Property          Description
 ================  ============================================================
 Metacat Context   The name of the deployed Metacat WAR file (minus the .war 
-                  extension). E.g., "knb"
+                  extension). E.g., "metacat"
 Server Name       The DNS name of the server hosting Metacat, not including 
                   port numbers or the protocol ("http://"). 
 HTTP Port         The non-secure port where Metacat will be available.
@@ -221,27 +221,52 @@ them in the admin interface. If you wish to change the authentication settings,
 you must restart Metacat to put the changes into effect. For more information 
 about the Authentication configurations, please see Initial Configurations.
 
-Skins Configuration
-~~~~~~~~~~~~~~~~~~~
-Customizing the look and feel of Metacat's Web interface is done via skins, 
-which are applied in the Skins Configuration section. If you have installed 
-the optional Registry, which provides a Web interface for creating, editing, 
-and submitting content to the Metacat, you can also choose which form fields 
-appear in that interface and which are required. Note that if you do not have 
-a custom skin AND you are not using the Registry, you can simply save the 
-default configuration.
+Skins Configuration 
+~~~~~~~~~~~~~~~~~~~   
+Customizing the look and feel of Metacat's web interface is done via skins or
+MetacatUI themes, however as of Version 2.2.0, skins have been deprecated. 
+Use MetacatUI themes instead. Themes can be deployed separately from the 
+Metacat server allowing easier independent user interface customization.
 
+MetacatUI Themes
+................
+Themes are applied in the Skins Configuration section. If you have installed 
+the optional Registry, which provides a web interface for creating, editing, 
+and submitting content to Metacat, you can also choose which form fields 
+appear in that interface and which are required. Note that if you do not have 
+a custom theme AND you are not using the Registry, you can simply save the 
+``metacatui`` default configuration.
+
+To use the new MetacatUI theming system, select ``metacatui`` and click the 
+``Make metacatui default`` radio button. Metacat will open a list of options 
+that apply to the Registry interface. For more information about creating 
+custom themes, see the section called :doc:`themes </Modifying and Creating Themes>`.
+
+.. figure:: images/screenshots/image070.png
+   :align: center
+
+   Configuring Metacat themes.
+
+Skins
+................
+.. deprecated:2.2.0
+   Use themes instead
+   
 If your Metacat has a customized skin, it will appear as a choice in the 
-Skins Configuration settings (see below screenshot). You can create your own skins as 
-well. For more information about creating skins, please see the section called
-`Creating a Custom Skin`_.
+Skins Configuration settings (see below screenshot). Select the checkbox next 
+to your customized skin or and click the ``Make <skin_name> default`` radio button. 
+If you do not have a custom skin, select the ``default`` skin. 
+
+Once you have selected a skin, Metacat will open a list of options that apply to the Registry 
+interface. For more information about creating skins, see the Creating a Custom Skin
+section in :doc:`themes </Modifying and Creating Themes>`.
 
 .. figure:: images/screenshots/image023.png
    :align: center
 
    Configuring Metacat skins.
    
-Select the checkbox next to your customized skin and click the 
+Select the checkbox next to your customized skin or and click the 
 ``Make <skin_name> default`` radio button. If you do not have a custom skin, 
 select the ``default`` skin. Once you have selected a skin, Metacat will open 
 a list of options that apply to the Registry interface.
@@ -388,9 +413,9 @@ optional properties that are only relevant when optional Metacat features
   <CONTEXT_DIR>/WEB_INF/metacat.properties
 
 Where ``<CONTEXT_DIR>`` is the directory in which the Metacat application code 
-lives (e.g., ``/var/lib/tomcat6/webapps/knb``). The path is a combination 
+lives (e.g., ``/var/lib/tomcat6/webapps/metacat``). The path is a combination 
 of the Web application directory (e.g., ``/var/lib/tomcat6/webapps/``) and 
-the Metacat context directory (e.g., ``knb``). Both values depend upon how your 
+the Metacat context directory (e.g., ``metacat``). Both values depend upon how your 
 system was set up during installation.
 
 For information about each property and default or example settings, please 
@@ -408,52 +433,3 @@ found here::
 Where ``<CONTEXT_DIR>`` is the directory in which the Metacat application code 
 lives (described above) and ``<SKIN_NAME>`` is the name of the skin 
 (e.g., ``default`` or ``nceas``).
-
-Creating a custom skin
-~~~~~~~~~~~~~~~~~~~~~~
-Skins are used in Metacat to customize the appearance of the search and display
-web interface that is presented by Metacat.  Skins can be used to make a Metacat
-instance exactly integrate into an existing web site, and are fully customizable.
-
-To create and customize your own Metacat skin, you must first create a skin 
-directory. This is most easily accomplished by copying one of the existing skin 
-directories. Step-by-step directions for creating and installing a custom skin 
-are included below:
-
-1. Copy an exisiting skin directory. We recommend using the "default" directory.
-
-  ::
-  
-    sudo cp -r <CONTEXT_DIR>/style/skins/default/ <CONTEXT_DIR>/style/skins/[yourSkin]/
-
-  Where ``<CONTEXT_DIR>`` is the directory in which the Metacat application 
-  code lives  and ``[yourSkin]`` is the name you wish to apply to your skin.
-
-2. In ``[yourSkin]`` directory, change all files named ``default.xxx`` to 
-   ``yourSkin.xxx``. The following files should be changed:
-
-  ::
-  
-    default.css
-    default.js
-    default.properties
-    default.properties.metadata.xml
-    default.xml
-
-3. In the metacat.properties file(``<CONTEXT_DIR>/WEB_INF/metacat.properties``), 
-   add ``[yourSkin]`` to the value of the skin.names property.
-
-4. Restart Tomcat. Log in as the user that runs your Tomcat server (often "tomcat") and type:
-
-  ::
-  
-    /etc/init.d/tomcat6 restart
-
-Navigate to Metacat's Configuration utility  and select the Configure Skins 
-option. Your custom skin should appear as a choice in the skins list. Change 
-the layout and style by modifying the header, footer, css, and other files in 
-your new skin directory.
-
-It is important to note that all customized skins will be overwritten when 
-Metacat is reinstalled or upgraded. Please remember to back up your skins before
-reinstalling or upgrading Metacat.

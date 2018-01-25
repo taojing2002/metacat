@@ -24,7 +24,7 @@
     <import resource="application-context-dryad30.xml" />
     <import resource="application-context-dryad31.xml" />
     
-    <import resource="application-context-resourcemap.xml" />
+    <import resource="application-context-resource-map.xml" />
     <import resource="application-context-systemmeta100.xml" />
 
  <bean id="dateConverter" class="org.dataone.cn.indexer.convert.SolrDateConverter" />
@@ -40,9 +40,8 @@
   <constructor-arg>
    <list>
     <bean class="edu.ucsb.nceas.metacat.index.SolrIndex">
-     <constructor-arg name="sysmetaSolrFields" ref="xpath_system_metadata_100">
-     </constructor-arg>
      <constructor-arg name="xmlNamespaceConfig" ref="xmlNamespaceConfig" />
+     <constructor-arg name="sysmetaSolrFields" ref="xpath_system_metadata_100"/>
      <!--<property name="solrBaseUri" value="${solr.base.uri}" />
      <property name="httpService" ref="httpService" /> -->
      <property name="subprocessors">

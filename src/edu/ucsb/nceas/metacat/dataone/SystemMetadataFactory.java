@@ -606,7 +606,18 @@ public class SystemMetadataFactory {
 		return sysMeta;
 	}
 
-    /**
+	/**
+	 * Checks for potential ORE object existence 
+	 * @param identifier
+	 * @return
+	 */
+    public static boolean oreExistsFor(Identifier identifier) {
+    	MockHttpServletRequest request = new MockHttpServletRequest(null, null, null);
+		List<Identifier> ids = MNodeService.getInstance(request).lookupOreFor(identifier, true);
+		return (ids != null && ids.size() > 0);
+	}
+
+	/**
      * Generate SystemMetadata for any object in the object store that does
      * not already have it.  SystemMetadata documents themselves, are, of course,
      * exempt.  This is a utility method for migration of existing object 
@@ -657,16 +668,6 @@ public class SystemMetadataFactory {
         }
         logMetacat.info("done generating system metadata for given list");
     }
-    
-	/**
-	 * Determines if we already have registered an ORE map for this package
-	 * @param guid of the EML/packaging object
-	 * @return true if there is an ORE map for the given package
-	 */
-	private static boolean oreExistsFor(Identifier guid) {
-		// TODO: implement call to CN.search()
-		return false;
-	}
 
 	/**
 	 * Find the size (in bytes) of a stream. Note: This needs to refactored out

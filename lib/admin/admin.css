@@ -26,146 +26,276 @@
   * along with this program; if not, write to the Free Software
   * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
   */
-body {
-	font-family: Arial, sans-serif;
-	font-size: 11pt;
-	margin-left: 30px;
-	margin-right: 30px;
-	width: 700px;
+
+/* Import the Metacat documentation stylesheet */
+@import url(../docs/_static/metacatui.css);
+
+/* THE BASICS
+-------------------------------------------------- */
+html{
+	margin: 0;
+	padding: 0;
+	width: 100%;
+	height: 100%;
+}
+body{
+	background: url(../docs/_static/bg.jpg) no-repeat center center fixed;
+	background-size: cover;
+     -webkit-background-size: cover;
+	 -moz-background-size: cover;
+	 -o-background-size: cover;
+	 font: 400 1em/1.2em Source Sans Pro, Arial, sans-serif;
+}
+
+h1{
+	font: 400 3em/3em "Oswald", Arial, sans-serif;
+	-webkit-margin-before: 0.2em;
+	-webkit-margin-after: 0.2em;
+	display: block;
+	clear: both;
 }
 
 h2 {
-	margin-top: 30px;
-	margin-bottom: 10px;
+	font: 400 2.5em/2.5em "Oswald", Arial, sans-serif;
+	-webkit-margin-before: 0.2em;
+	-webkit-margin-after: 0.2em;
+	display: block;
+	clear: both;
 }
 
 h3 {
-	margin-top: 8px;
-	margin-bottom: 8px;
+	font: 400 1.5em/1.5em "Oswald", Arial, sans-serif;
+	-webkit-margin-before: 0.2em;
+	-webkit-margin-after: 0.2em;
+	display: block;
+	clear: both;
+	margin-top: 20px;
 }
 
 input {
 	padding-left: 4px;
 	width: 400px;
+	border: 1px solid #AAAAAA;
+	font: 400 1em/1em Source Sans Pro, Arial, sans-serif;
+	background-color:#FFFFFF;
+	color: #333333;
+	border-radius: 5px;
+	-moz-border-radius: 5px;
+	-webkit-border-radius: 5px;
+}
+
+select{
+	border: 1px solid #AAAAAA;
+	font: 400 1em/1em Source Sans Pro, Arial, sans-serif;
+	height: 2em;
 }
 
 input[type="submit"] {
 	width: 100px;
 	margin-right: 5px;
 	margin-top: 20px;
+	cursor: pointer;
 }
 
 input[type="radio"] {
 	margin-bottom: 4px;
-	width: 13px;
+	width: 15px;
+	height: 15px;
+	float: left;
+	-webkit-appearance: radio;
 }
 
 input[type="checkbox"] {
-	width: 13px;
+	width: 15px;
+	height: 15px;
+	float: left;
+	-webkit-appearance: checkbox;
+	margin-top: 1em;
 }
 
 label {
-	font-size: 12pt;
+	font-size: 1.1em;
+	line-height: 1.1em;
+	display: block;
+	margin-top: 10px;
 }
 
-table {
-	margin-left: auto;
-	margin-right: auto;
+table{
+	background: none;
 }
 
-.config-line {
-	color: #dddddd;
-	background-color: #dddddd;
-	height: 1px;
+
+
+/* NAVIGATION AND HEADER AND FOOTER
+------------------------------------- */
+.footer{
+	width: 100%;
+	padding: 20px 20px 0 0;
+	bottom: 0;
 }
 
-.username-input {
-	width: 500px;
+.footer > p{
+	font: 400 1em/1em Source Sans Pro, Arial;
+	float: right;
+	clear: both;
+	display: block;
+	text-transform: none;
+	margin-right: 20px;
 }
 
-.login-input {
-	width: 300px;
+.footer > ul{
+	clear: both;
+	float: right;
+	margin-right: 20px;
 }
 
-br {
+.footer li {
+	list-style: none;
+	float: left;
+	margin-left: 20px;
+}
+
+.footer li > a,
+.header li > a{
+	color: #FFFFFF;
+	font: 400 2em/2em Oswald, Arial;
+	text-transform: uppercase;
+}
+
+.footer li > a:hover,
+.header li > a:hover{
+	opacity: 0.6;
+	text-decoration: none;
+}
+
+.document{
+	position: relative;
+	margin-top: 20px;
+	padding-bottom: 10px;
+	min-height: 800px;
+}
+
+.header{
+	height: 100px;
+	margin: 10px;
+}
+
+/* FORMS
+----------------------------------------*/
+.textinput,
+input[type="password"],
+input[type="text"] {
+	vertical-align: middle;
+	width: 30em;
+	height: 2.2em;
+	font: 400 1em/2em Source Sans Pro;
+	border-radius: 5px;
+	-moz-border-radius: 5px;
+	-webkit-border-radius: 5px;
+	border: 1px solid #aaa;
+}
+
+.textinput-label {
+	text-align: right;
+	float: left;
+	width: 200px;
 	clear: left;
 }
 
-br.auth-header {
-	margin-bottom: 80px;
+.textinput-description {
+	margin-left: 215px;
+	color: #666666;
+	font-size: 0.8em;
+	clear: both;
+	min-height: 2em;
+	max-width: 500px;
+	position: relative;
+	top: -5px;
 }
 
-br.main-header {
-	margin-bottom: 70px;
-}
-
-br.skins-header {
-	margin-bottom: 50px;
-}
-
-.button {
+.button, input[type="submit"], input[type="button"] {
 	width: 100px;
-	margin-right: 5px;
-	margin-top: 20px;
+	margin: 20px 5px 10px 0px;
+	font: 400 1.2em/1.5em Oswald, Arial;
+	cursor: pointer;
+	height: 1.7em;
 }
 
-.left-button {
-	width: 100px;
-	margin-left: 275px;
-	margin-right: 5px;
-	margin-top: 20px;
+
+.checkradio-label-inline {
+ 	display: inline;
+	vertical-align: middle;
 }
 
-.warning {
-	color: red;
+.checkradio-label{
+	margin: 0.7em 0px 0px 10px;
+	float: left;
+}
+.checkradio-description {
+	font: 400 .8em/.8em Source Sans Pro;
+	color: #666666;
+	clear: both;
+	margin: 8px 0px 10px 38px;
 }
 
+.radiowrapper{
+	padding-top: 10px;
+}
+.icon-question-sign {
+	color: #166194;
+	font-size: 1.2em;
+	cursor: pointer;
+	margin-left: 10px;
+	margin-top: 0.5em;
+	display: inline-block;
+}
+
+.checkbox-help{			/*For question mark icons next to checkboxes (need different vertical positioning) */
+	margin-top: 0.7em;	
+}
+
+.form-row {
+	height: 2em;
+	clear: both;
+}
+
+.form-row input,
+.form-row select,
+.form-row span{
+	float: left;
+	margin-left: 1em;
+	margin-bottom: 10px;
+}
+
+/* OTHER
+----------------------------------------*/
+
+.clear{
+	clear: both;
+}
+
+.admin-login > tbody > tr > td{
+	padding: 0px 10px 0px 0px;
+}
+
+.admin-login > tbody > tr{
+	padding: 0px;
+}
+
+.username-input, login-input {
+	width: auto;
+	margin-bottom: 0px;
+}
+
+.buttons-wrapper{
+	clear:both;
+	margin: auto;
+	max-width: 350px;
+}
 .heading-comment {
 	margin-bottom: 0px;
 }
 
-.small-message {
-	margin-top: 10px;
-	font-size: 11px;
-}
-
-.message-text {
-	font-size: 9pt;
-	font-weight: bold;
-	color: blue;
-	margin-bottom: 5px;
-}
-
-.success-text {
-	font-size: 9pt;
-	font-weight: bold;
-	color: green;
-	margin-bottom: 5px;
-}
-
-.error-text {
-	font-size: 9pt;
-	color: red;
-	margin-bottom: 5px;
-}
-
-.error-header {
-	font-size: 9pt;
-	font-weight: bold;
-	color: red;
-}
-
-.formfield-error-text {
-	font-size: 9pt;
-	color: red;
-	margin-bottom: 5px;
-}
-
-.formfield-error-header {
-	font-size: 9pt;
-	font-weight: bold;
-	color: red;
-}
 
 .configured-tag {
 	color: green;
@@ -176,14 +306,8 @@ br.skins-header {
 .unconfigured-tag {
 	color: red;
 	width: 125px;
-	height: 30px;
 }
 
-.property-title {
-	font-weight: bolder;
-	font-size: 12pt;
-	width: 300px;
-}
 
 .skin-name {
 	font-size: 14pt;
@@ -191,12 +315,47 @@ br.skins-header {
 }
 
 .smaller-text {
-	font-size: smaller;
+	font-size: 0.5em;
 	display: inline;
 }
 
+.configuration-table{
+	border-collapse: separate;
+	border-spacing: 6px;
+	background: none;
+}
+
 .configure-link {
-	font-size: 11pt;
+	background: rgba(255, 255, 255, 0.7);
+	border-radius: 10px;
+	-moz-border-radius: 10px;
+	-webkit-border-radius: 10px;
+	color: #333333;
+}
+
+.configure-link.inactive{
+	background: none;
+}
+
+.configure-link.inactive:hover{
+	background: none;
+	cursor: default;
+	color: #333333;
+}
+
+.configure-link > i,
+.configure-link > a{
+	color: inherit;
+	vertical-align: middle;
+}
+
+.configure-link:hover,
+.configure-link:hover > a,
+.configure-link:hover > i{
+	background: rgba(255, 255, 255, 1);
+	color: #166194;
+	text-decoration: none;
+	cursor: pointer;
 }
 
 .hiding-section {
@@ -205,55 +364,20 @@ br.skins-header {
 	margin-left: 2em;
 }
 
-.checkradio {
-	text-align: left;
-	vertical-align: middle;
-	width: 3em;
+frame[name="bottom"] table
+{
+	border-collapse: collapse;
+	border: 1px solid #333;
+	font: 400 1em/1em Source Sans Pro, Arial, sans-serif;
 }
 
-.checkradio-label {
-	text-align: left;
-	vertical-align: middle;
-	margin-left: 1em;
+frame[name="bottom"] table > tbody > td
+{
+	padding: 5px;
 }
 
-.checkradio-label-inline {
- 	display: inline;
-	vertical-align: middle;
+i{
+	margin-right: 10px;
 }
 
-.checkradio-description {
-	margin-left: 4.25em;
-	color: gray;
-	font-size: 11;
-}
-
-.textinput {
-	margin-left: 1em;
-	vertical-align: middle;
-	width: 30em;
-}
-
-.textinput-label {
-	text-align: right;
-	vertical-align: middle;
-	float: left;
-	width: 200px;
-}
-
-.textinput-description {
-	margin-left: 210px;
-	color: gray;
-	font-size: 11;
-}
-
-.question-mark {
-	float: right;
-	vertical-align: middle;
-	margin-right: 5px;
-}
-
-.form-row {
-	margin-top: .5em;
-}
 

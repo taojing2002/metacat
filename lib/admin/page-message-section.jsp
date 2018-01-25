@@ -29,12 +29,12 @@
 <%  
    if (request.getAttribute("processingSuccess") != null && ((Vector<String>)request.getAttribute("processingSuccess")).size() > 0) { 
 %> 
-   <div class=success-text>
+   <div class="alert alert-success">
 <%     
       Vector<String> processingSuccesses = (Vector<String>)request.getAttribute("processingSuccess");
       for (String processingSuccess : processingSuccesses) { 
 %>
-    	  -- &nbsp;<%= processingSuccess %> <br> 
+    	  <%= processingSuccess %> <br> 
 <%     
        }   
 %>
@@ -44,12 +44,12 @@
 
    if (request.getAttribute("processingMessage") != null && ((Vector<String>)request.getAttribute("processingMessage")).size() > 0) { 
 %> 
-   <div class=message-text>
+   <div class="alert">
 <%     
       Vector<String> processingMessages = (Vector<String>)request.getAttribute("processingMessage");
       for (String processingMessage : processingMessages) { 
 %>
-    	   -- &nbsp;<%= processingMessage %> <br> 
+    	   <%= processingMessage %> <br> 
 <%     
        } 
 %>
@@ -59,15 +59,13 @@
    
    if (request.getAttribute("formFieldErrors") != null && ((Vector<String>)request.getAttribute("formFieldErrors")).size() > 0) { 
 %>
-   <div class=formfield-error-header>
+   <div class="alert alert-error">
       Please correct the following form errors and resubmit: <br><br>
-   </div>  
-   <div class=formfield-error-text>
 <%     
       Vector<String> formErrors = (Vector<String>)request.getAttribute("formFieldErrors");
       for (String formError : formErrors) { 
 %>
-    	  -- &nbsp;<%= formError %> <br> 
+    	  <%= formError %> <br> 
 <%     
        }     
 %>      
@@ -75,15 +73,13 @@
 <% 
    } else if (request.getAttribute("processingErrors") != null && ((Vector<String>)request.getAttribute("processingErrors")).size() > 0) { 
 %>
-   <div class=error-header>
+   <div class="alert alert-error">
       The following errors occurred.  Please correct errors if possible or contact your system adminstrator or contact support at <%= (String)request.getAttribute("supportEmail") %> <br><br>
-   </div>  
-   <div class=error-text>
 <%     
       Vector<String> processingErrors = (Vector<String>)request.getAttribute("processingErrors");
       for (String processingError : processingErrors) { 
 %>
-    	  -- &nbsp;<%= processingError %> <br> 
+    	  <%= processingError %> <br> 
 <%     
        }     
 %>      

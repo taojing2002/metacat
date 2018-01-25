@@ -58,7 +58,7 @@ instructions for each step are in the next section.
 3. Log in to PostgreSQL and create the 'metacat' user
 4. Download Metacat from the `Metacat Download Page`_ and extract the archive
 5. ``sudo mkdir /var/metacat; sudo chown -R <tomcat_user> /var/metacat``
-6. ``sudo cp <metacat_package_dir>/knb.war <tomcat_app_dir>``
+6. ``sudo cp <metacat_package_dir>/metacat.war <tomcat_app_dir>``
 7. ``sudo /etc/init.d/tomcat6 restart``
 8. Configure Metacat through the Web interface
 
@@ -83,7 +83,7 @@ Download the Metacat Installer
 Downloading the Metacat Installer is the simplest way to get started with the
 application. To download the installer: 
 
-1.  Browse to the `Metacat Download Page`_. In the Metacat section, select the link to the "GZIP file" (the link should look like: metacat-bin-X.X.X.tar.gz, where X.X.X is the latest version of Metacat e.g., 2.1.1) 
+1.  Browse to the `Metacat Download Page`_. In the Metacat section, select the link to the "GZIP file" (the link should look like: metacat-bin-X.X.X.tar.gz, where X.X.X is the latest version of Metacat e.g., 2.2.0) 
 2.  Save the file locally. 
 3.  Extract the Metacat package files by typing:
 
@@ -98,10 +98,10 @@ remainder of this documentation.
 ================== ===========================================================
 File               Description
 ================== ===========================================================
-knb.war            The Metacat Web archive file (WAR) 
-knb                Sample Web definition file used by Apache on Ubuntu/Debian 
+metacat.war        The Metacat Web archive file (WAR) 
+metacat-site       Sample Web definition file used by Apache on Ubuntu/Debian 
                    Linux systems. 
-knb.ssl            Sample SSL definition file used by Apache on Ubuntu/Debian 
+metacat-site-ssl   Sample SSL definition file used by Apache on Ubuntu/Debian 
                    Linux systems.
 jk.conf            Sample JkMount configuration file used by Apache on 
                    Ubuntu/Debian Linux systems. 
@@ -115,7 +115,7 @@ Download Metacat Source Code
 ............................
 To get the Metacat source distribution:
 
-1. Browse to the `Metacat Download Page`_. In the Metacat section, select the link to the Metacat Source code (it will look something like this: metacat-src-X.X.X.tar.gz, where X.X.X is the latest version of Metacat, e.g., 2.1.1).
+1. Browse to the `Metacat Download Page`_. In the Metacat section, select the link to the Metacat Source code (it will look something like this: metacat-src-X.X.X.tar.gz, where X.X.X is the latest version of Metacat, e.g., 2.2.0).
 2. Save the file locally. 
 3. Extract the Metacat package files by typing (replace X.X.X with the current version number): 
 
@@ -131,11 +131,6 @@ build-file has an "install" target that will build and deploy the WAR for you.
 
 Check Out Metacat Source Code from SVN (for Developers)
 .......................................................
-If you wish to work with the most recent Metacat code, or you'd like to extend
-the Metacat code yourself, you may wish to check out the Metacat source code
-from SVN. You will need a Subversion (SVN) client installed and configured on
-your system (see the end of this section for information about obtaining an SVN
-client). 
 
 .. sidebar:: Installing an SVN Client:
 
@@ -148,6 +143,12 @@ client).
 
     Otherwise, you can get the SVN client from The Subversion homepage
     (http://subversion.tigris.org/).
+    
+If you wish to work with the most recent Metacat code, or you'd like to extend
+the Metacat code yourself, you may wish to check out the Metacat source code
+from SVN. You will need a Subversion (SVN) client installed and configured on
+your system (see the end of this section for information about obtaining an SVN
+client). 
 
 To check out the code from SVN, go to the directory where you would like the
 code to live and type::
@@ -277,27 +278,25 @@ install and run the Metacat Registry or to use the Metacat Replication feature.
         ServerName dev.nceas.ucsb.edu 
         ErrorLog /var/log/httpd/error_log 
         CustomLog /var/log/httpd/access_log common 
-        ScriptAlias /cgi-bin/ "/var/www/cgi-knb/" 
-        <Directory /var/www/cgi-knb/> 
+        ScriptAlias /cgi-bin/ "/var/www/cgi-bin/" 
+        <Directory /var/www/cgi-bin/> 
           AllowOverride None 
           Options ExecCGI 
           Order allow,deny 
           Allow from all 
         </Directory> 
-        ScriptAlias /knb/cgi-bin/ "/var/www/webapps/knb/cgi-bin/" 
-        <Directory "/var/www/webapps/knb/cgi-bin/"> 
+        ScriptAlias /metacat/cgi-bin/ "/var/www/webapps/metacat/cgi-bin/" 
+        <Directory "/var/www/webapps/metacat/cgi-bin/"> 
           AllowOverride None 
           Options ExecCGI 
           Order allow,deny 
           Allow from all 
         </Directory> 
-        JkMount /knb ajp13 
-        JkMount /knb/* ajp13 
-        JkMount /knb/metacat ajp13 
-        JkUnMount /knb/cgi-bin/* ajp13 
-        JkMount /*.jsp ajp13 
         JkMount /metacat ajp13 
         JkMount /metacat/* ajp13 
+        JkMount /metacat/metacat ajp13 
+        JkUnMount /metacat/cgi-bin/* ajp13 
+        JkMount /*.jsp ajp13 
       </VirtualHost> 
 
   3. Copy the "workers.properties" file provided by Metacat into your Apache configuration directory (<apache_install_dir>/conf/).  Depending on whether you are installing from binary distribution or source, the workers.properties file will be in one of two locations:
@@ -351,12 +350,12 @@ these helper files will be in one of two locations:
   sudo a2dismod jk
   sudo a2enmod jk
 
-4. Apache needs to know about the Metacat site. The helper file named "knb" has rules that tell Apache which traffic to route to Metacat. Set up the knb (Metacat) site by dropping the knb file into the sites-available directory and running a2ensite to enable the site:
+4. Apache needs to know about the Metacat site. The helper file named "metacat-site" has rules that tell Apache which traffic to route to Metacat. Set up Metacat site by dropping the metacat-site file into the sites-available directory and running a2ensite to enable the site:
 
 ::
 
-  sudo cp <metacat_helper_dir>/knb <apache_install_dir>/sites-available
-  sudo a2ensite knb
+  sudo cp <metacat_helper_dir>/metacat-site <apache_install_dir>/sites-available
+  sudo a2ensite metacat-site
   
 5. Disable the default Apache site configuration:
 
@@ -534,11 +533,11 @@ To install a new Metacat servlet:
     sudo chown -R <tomcat_user> /var/metacat
 
 
-3.  Install the Metacat WAR in the Tomcat web-application directory. For instructions on downloading the Metacat WAR, please see Downloading Metacat.  Typically, Tomcat will look for its application files (WAR files) in the <tomcat_home>/webapps directory (e.g., /usr/share/tomcat6/webapps). Your instance of Tomcat may be configured to look in a different directory. We will refer to the Tomcat application directory as <tomcat_app_dir>.  NOTE: The name of the WAR file (e.g., knb.war) provides the application context, which appears in the URL of the Metacat (e.g., http://yourserver.com/knb/). To change the context, simply change the name of the WAR file to the desired name before copying it.  To install the Metacat WAR:
+3.  Install the Metacat WAR in the Tomcat web-application directory. For instructions on downloading the Metacat WAR, please see Downloading Metacat.  Typically, Tomcat will look for its application files (WAR files) in the <tomcat_home>/webapps directory (e.g., /usr/share/tomcat6/webapps). Your instance of Tomcat may be configured to look in a different directory. We will refer to the Tomcat application directory as <tomcat_app_dir>.  NOTE: The name of the WAR file (e.g., metacat.war) provides the application context, which appears in the URL of the Metacat (e.g., http://yourserver.com/metacat/). To change the context, simply change the name of the WAR file to the desired name before copying it.  To install the Metacat WAR:
 
   ::
 
-    sudo cp <metacat_package_dir>/knb.war <tomcat_app_dir>
+    sudo cp <metacat_package_dir>/metacat.war <tomcat_app_dir>
 
 
 4. Restart Tomcat. Log in as the user that runs your Tomcat server (often "tomcat") and type:  
@@ -577,8 +576,8 @@ instructions for installing from source:
 
   ::
 
-    cp <web_app_dir>/knb <backup_dir>/knb.<yyyymmdd>
-    cp <web_app_dir>/knb.war <backup_dir>/knb.war.<yyyymmdd>
+    cp <web_app_dir>/metacat <backup_dir>/metacat.<yyyymmdd>
+    cp <web_app_dir>/metacat.war <backup_dir>/metacat.war.<yyyymmdd>
 
   Warning: Do not backup the files to the ``<web_app_dir>`` directory.  Tomcat will
   try to run the backup copy as a service.
@@ -587,7 +586,7 @@ instructions for installing from source:
 
   ::
 
-    sudo cp <metacat_package_dir>/knb.war <tomcat_app_dir>
+    sudo cp <metacat_package_dir>/metacat.war <tomcat_app_dir>
 
   Note: Typically, Tomcat will look for its application files (WAR files) in the
   ``<tomcat_home>/webapps`` directory. Your instance of Tomcat may be configured to
@@ -614,7 +613,7 @@ Metacat application, using a URL of the form:
     http://yourserver.yourdomain.com/yourcontext/
 
 You should substitute your context name for "yourcontext" in the URL above
-(your context will be "knb" unless you change the name of the knb.war file to
+(your context will be "metacat" unless you change the name of the metacat.war file to
 something else). If everything is working correctly, you should be presented
 with Metacat's Authorization Configuration screen. Note that if you do not have
 Tomcat integrated with Apache you will probably have to type
@@ -647,15 +646,15 @@ To install Metacat from source:
   You will see the individual modules get built. You should see a "BUILD
   SUCCESSFUL" message at the end.
 
-  You should see a new file named knb.war in your application deployment
+  You should see a new file named metacat.war in your application deployment
   directory.
 
 To run your new Metacat servlet, open a Web browser and type::
 
   http://yourserver.yourdomain.com/yourcontext/ 
-  (e.g.  http://knb.ecoinformatics.org/knb/)
+  (e.g.  http://knb.ecoinformatics.org/metacat/)
 
-Your context will be "knb" unless you changed the name of the knb.war file to
+Your context will be "metacat" unless you changed the name of the metacat.war file to
 something else. The servlet may require a few seconds to start up, but once it
 is running, you will be presented with the Authorization Configuration screen.
 
@@ -951,7 +950,7 @@ To download and install PostgreSQL:
 
   ::
   
-    Psql ���U metacat ���W ���h localhost metacat
+    psql -U metacat -W -h localhost metacat
 
 10. Exit PostgreSQL:
 
@@ -985,7 +984,7 @@ To install a new Metacat servlet:
   
   ::
 
-    copy <metacat_package_dir>\knb.war C:\Program Files\tomcat\webapps
+    copy <metacat_package_dir>\metacat.war C:\Program Files\tomcat\webapps
 
 3.  Restart Tomcat: 
 
@@ -1011,17 +1010,17 @@ To upgrade an existing Metacat installation:
 
   ::
 
-    <web_app_dir>/knb to <backup_dir>/knb.<yyyymmdd>
-    <web_app_dir>/knb.war to <backup_dir>/knb.war.<yyyymmdd>
+    <web_app_dir>/metacat to <backup_dir>/metacat.<yyyymmdd>
+    <web_app_dir>/metacat.war to <backup_dir>/metacat.war.<yyyymmdd>
 
-  Warning: Do not backup the knb directory in the <web_app_dir> directory.
+  Warning: Do not backup the metacat directory in the <web_app_dir> directory.
   Tomcat will try to run the backup copy as a service.
 
 3.  Copy the new Metacat WAR file in to Tomcat applications directory: 
 
   ::
 
-    copy knb.war C:\Program Files\tomcat\webapps
+    copy metacat.war C:\Program Files\tomcat\webapps
 
 4.  Restart Tomcat: 
   

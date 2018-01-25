@@ -64,6 +64,7 @@
 	<macrodef name = "git-clone-pull">
 	    <attribute name = "repository" />
 	    <attribute name = "dest" />
+	    <attribute name = "refname" />
 	    <sequential>
 	        <git command = "clone">
 	            <args>
@@ -71,9 +72,40 @@
 	                <arg value = "@{dest}" />
 	            </args>
 	        </git>
-	        <git command = "pull" dir = "@{dest}" />
+	        <git command = "pull" dir = "@{dest}" >
+	        	<args>
+	                <arg value = "@{repository}" />
+	                <arg value = "@{refname}" />
+	            </args>
+	        </git>
+	        <git command = "checkout" dir = "@{dest}">
+	        	<args>
+	                <arg value = "@{refname}" />
+	            </args>
+	        </git>
 	    </sequential>
 	</macrodef>
+	
+	<!-- get metacatUI project -->
+	<target name="getMetacatUI" depends="init">
+		<git-clone-pull repository="${metacatui.git.repository.url}" dest="${metacatui.build.dir}" refname="${metacatui.git.repository.refname}" />
+	</target>
+	
+	<target name="build-metacat-ui" description="Calls the Maven build for metacatUI war" depends="getMetacatUI" unless="build-metacat-ui-called">
+		<artifact:mvn pom="${metacatui.build.dir}/metacatui/pom.xml" mavenhome="${maven.home}" fork="true">
+			<arg value="clean"/>
+		</artifact:mvn>
+		<artifact:mvn pom="${metacatui.build.dir}/metacatui/pom.xml" mavenhome="${maven.home}" fork="true">
+		   <arg value="package"/>
+		</artifact:mvn>
+		<property name="build-metacat-ui-called" value="true"/>
+	</target>
+	
+	<target name="dist-metacat-ui" depends="build-metacat-ui">
+		<copy tofile="${dist.dir}/metacatui.war" >
+			<fileset dir="${metacatui.build.dir}/metacatui/target" includes="*.war"></fileset>
+		</copy>	
+	</target>
     	
 	<taskdef resource="axis-tasks.properties"
 		classpathref="axis.ant.classpath" />
@@ -383,8 +415,10 @@
 		<!-- the git repo -->
 		<property name="metacatui.git.repository.url"
 					value="https://github.com/NCEAS/metacatui.git" />
+		<property name="metacatui.git.repository.refname"
+							value="METACATUI_1_1_0" />
 		<property name="metacatui.build.dir"
-					value="${build.dir}/metacatui" />
+					value="metacatui_build" />
 		<property name="metacatui.resources.dir"
 					value="${metacatui.build.dir}/metacatui/src/main/webapp" />
 		
@@ -794,24 +828,26 @@
 	</target>
 
 	<target name="install" depends="build-metacat"
-		description="* Full Install For Development *">
+		description="* Install Metacat For Development *">
 		<copy file="${dist.dir}/${metacat.context}.war"
 			todir="${app.deploy.dir}" />
-               <!-- <copy file="${dist.dir}/${metacat.context}.war"
-                        todir="${app.deploy.dir2}" />-->
 		<delete dir="${app.deploy.dir}/${metacat.context}" />
-		<!--<delete dir="${app.deploy.dir2}/${metacat.context}" />-->
 		<copy file="${dist.dir}/geoserver.war"
 					todir="${app.deploy.dir}" />
+		<delete dir="${app.deploy.dir}/geoserver" />
 		<copy file="${dist.dir}/metacat-index.war"
 					todir="${app.deploy.dir}" />
+		<delete dir="${app.deploy.dir}/metacat-index" />
+		<copy file="${dist.dir}/metacatui.war"
+					todir="${app.deploy.dir}" />
+		<delete dir="${app.deploy.dir}/metacatui" />
 		<tstamp>
 			<format property="NOW" pattern="MM/dd/yyyy hh:mm:ss aa" />
 		</tstamp>
 		<echo>Dev install completed at ${NOW}</echo>
 	</target>
 
-	<target name="build-metacat" depends="install-ecogrid, install-spatial, dist-metacat-index"
+	<target name="build-metacat" depends="install-ecogrid, install-spatial, dist-metacat-index, dist-metacat-ui"
 		description="Build Metacat">
 	</target>
 
@@ -916,7 +952,7 @@
 		<echo message="Install Skin completed." />
 	</target>
 
-	<target name="war" depends="warPrepare,install-spatial, dist-metacat-index"
+	<target name="war" depends="warPrepare,install-spatial"
 		description="Create a web archive (WAR) for servlet deployment">
 		<mkdir dir="${dist.dir}" />
 		<war destfile="${dist.dir}/${metacat.context}.war"
@@ -1358,6 +1394,8 @@
 			<fileset dir="${utilitiesdir}"/>
 			<fileset dir="${libdir.mvn}"/>
 		</delete>
+		<!-- remove the entire directory -->
+		<delete includeemptydirs="true" dir="${metacatui.build.dir}" />
 		<!-- clean up the distribution files if they exist-->
 		<delete file="./${name}-bin-${release}.tar.gz" />
 		<delete file="./${name}-src-${release}.tar.gz" />
@@ -1498,7 +1536,7 @@
 		</copy>
 		<chmod file="${deb.pkg.dir}/DEBIAN/postinst" perm="755" />
 
-		<copy file="${dist.dir}/knb.war"
+		<copy file="${dist.dir}/${metacat.context}.war"
 			todir="${deb.pkg.dir}/usr/share/metacat-${metacat.version}" />
 		<copy file="./metacat-bin-${metacat.version}.tar.gz"
 			tofile="${deb.pkg.dir}/metacat_${metacat.version}.orig.tar.gz" />

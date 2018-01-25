@@ -75,7 +75,7 @@ To install and run the Registry:
 
     ::
     
-      sudo yum install gcc libxml2-devel libxslt-devel ant –y
+      sudo yum install gcc libxml2-devel libxslt-devel ant -y
 
   * Install CPAN, which allows us to install the Perl dependencies for the 
     registry and account management parts of Metacat. If asked to manually 
@@ -115,6 +115,7 @@ To install and run the Registry:
       install Template 
       install URI
       install MSERGEANT/XML-LibXSLT-1.58.tar.gz
+      install Captcha:reCAPTCHA
 
 2. Install the required system libraries using Ubuntu/Debian (instructions 
    Red Hat in sidebar)
@@ -134,17 +135,18 @@ To install and run the Registry:
     
       sudo cpan -i Config::Properties
       sudo cpan -i Scalar::Util
+      sudo cpan -i Captcha:reCAPTCHA
 
 
 3. Double-check that Metacat's temporary folder, application.tempDir, is 
    writable by the apache user, usually www-data or apache. 
 
-4. Make sure that the following scripts (found in ``<tomcat-home>/webapps/knb/cgi-bin``) 
+4. Make sure that the following scripts (found in ``<tomcat-home>/webapps/metacat/cgi-bin``) 
    are executable: register-dataset.cgi and ldapweb.cgi.
 
   ::
   
-    sudo chmod +x <tomcat-home>/webapps/knb/cgi-bin/*.cgi
+    sudo chmod +x <tomcat-home>/webapps/metacat/cgi-bin/*.cgi
 
 5. Restart Apache.
 
@@ -173,7 +175,7 @@ Skins Configuration settings. If you are using the default skin, you must
 disable the 'show site list' setting before you can submit the form without 
 errors. You may also wish to remove (or modify) the list of NCEAS-specific 
 projects that appear in the default registry. To remove these form fields, 
-open Metacat's administrative interface (http://<your.context.url>/knb/admin) 
+open Metacat's administrative interface (http://<your.context.url>/metacat/admin) 
 and select the Skins Specific Properties Configuration option. On the skins 
 configuration page, uncheck the boxes beside any form elements that you do not 
 wish to appear in the registry.
@@ -189,6 +191,24 @@ equivalent command appropriate to your operating system.
    the example, the "Show Site List" and "Show Work Group" form fields, 
    corresponding to the "Station Name" and "NCEAS Project" drop-down lists in 
    the registry form, have been removed.
+   
+LDAP account management
+~~~~~~~~~~~~~~~~~~~~~~~~
+If you intend to use Metacat's built-in LDAP account management feature, 
+you will need public and private keys for the reCaptcha widget.
+
+1. Get private and public recaptcha keys from Google using your Google account:
+https://www.google.com/recaptcha/admin/create
+
+2. Configure Metacat to use those keys in the metacat.properties file:
+
+  ::
+  
+	ldap.recaptcha.publickey=<your public key>
+	ldap.recaptcha.privatekey=<your private key>
+
+3. Restart Tomcat
+
    
 Using HTML Forms (the HTTP Interface)
 -------------------------------------
@@ -331,8 +351,8 @@ please see :doc:`replication`.
 +--------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | squery                   | Perform a structured query. For an example, please see Searching Metacat.                                                                                                                                                                                          |
 |                          |                                                                                                                                                                                                                                                                    |
-|                          | ``query`` - the text of the pathquery document sent to the server  																																																																																																																																																																								|
-|                          | ``qformat`` - the format to return the results in. Possible values are:  ``xml``, or the name of the a skin.                                                                                                                  |                                                                              |
+|                          | ``query`` - the text of the pathquery document sent to the server  																																																|
+|                          | ``qformat`` - the format to return the results in. Possible values are:  ``xml``, or the name of the a skin.                                                                                                                                                       |
 +--------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | update                   | Overwrite an XML document with a new one and give the new one the same docid but with                                                                                                                                                                              |
 |                          | the next revision number. For an example, please see Inserting, Updating, and                                                                                                                                                                                      |
@@ -576,7 +596,7 @@ using an squery action.
   <title>Search</title>
   </head>
   <body>
-  <form method="POST" action="http://panucci.nceas.ucsb.edu/knb/servlet/metacat">
+  <form method="POST" action="http://panucci.nceas.ucsb.edu/metacat/metacat">
 
   Search for:
 
@@ -831,7 +851,7 @@ updated metadata and data back to the grid nodes.
 
 For more information about each EarthGrid service and its WSDL file, navigate 
 to the "services" page on your Metacat server 
-(e.g., http://knb.ecoinformatics.org/knb/services). 
+(e.g., http://knb.ecoinformatics.org/metacat/services). 
 Note that the AdminService and Version service that appear on this page are 
 not part of EarthGrid.
 
@@ -884,7 +904,7 @@ Morpho Preferences to point to your Metacat server.
    
    Set the Metacat URL in the Morpho preferences to point to your Metacat.
 
-For more information about Morpho, please see: http://knb.ecoinformatics.org/morphoportal.jsp
+For more information about Morpho, please see: http://knb.ecoinformatics.org/
 
 Creating Your Own Client
 ------------------------
