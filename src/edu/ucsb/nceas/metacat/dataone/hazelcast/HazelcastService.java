@@ -28,6 +28,9 @@ package edu.ucsb.nceas.metacat.dataone.hazelcast;
 
 import java.io.FileNotFoundException;
 import java.sql.SQLException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -562,7 +565,12 @@ public class HazelcastService extends BaseService
 			public void run() {
 				try {
 					// this is a push mechanism
-					resynchToRemote();
+				    DateFormat dateFormat = new SimpleDateFormat("MMM dd, yyyy HH:mm:ss aaa");
+                    System.out.println(dateFormat.format(Calendar.getInstance().getTime())+" Start the hazelcast synchronization");
+                    logMetacat.warn("Start the hazelcast synchronization");
+                    resynchToRemote();
+                    System.out.println(dateFormat.format(Calendar.getInstance().getTime())+" End the hazelcast synchronization");
+                    logMetacat.warn("End the hazelcast synchronization");
 				} catch (Exception e) {
 					logMetacat.error("Error in resynchInThread: " + e.getMessage(), e);
 				}
