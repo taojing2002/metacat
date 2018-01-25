@@ -121,7 +121,7 @@ public abstract class D1NodeService {
   protected MetacatHandler handler;
   
   /* parameters set in the incoming request */
-  private Hashtable<String, String[]> params;
+  //private Hashtable<String, String[]> params;
   
   /**
    * limit paged results sets to a configured maximum
@@ -426,25 +426,25 @@ public abstract class D1NodeService {
     	
     // we have the go ahead
     //if ( allowed ) {
-         
+     
+      
+        logMetacat.debug("Allowed to insert: " + pid.getValue());
+
         // save the sysmeta
         try {
             // lock and unlock of the pid happens in the subclass
             HazelcastService.getInstance().getSystemMetadataMap().put(sysmeta.getIdentifier(), sysmeta);
-           
         
         } catch (Exception e) {
-            logMetacat.error("Problem creating system metadata: " + pid.getValue(), e);
-            throw new ServiceFailure("1190", e.getMessage());
+            logMetacat.error("D1Node.create - There was problem to save the system metadata: " + pid.getValue(), e);
+            throw new ServiceFailure("1190", "There was problem to save the system metadata: " + pid.getValue()+" since "+e.getMessage());
         }
-      
-        logMetacat.debug("Allowed to insert: " + pid.getValue());
-
+        boolean isScienceMetadata = false;
       // Science metadata (XML) or science data object?
       // TODO: there are cases where certain object formats are science metadata
       // but are not XML (netCDF ...).  Handle this.
       if ( isScienceMetadata(sysmeta) ) {
-        
+        isScienceMetadata = true;
         // CASE METADATA:
       	//String objectAsXML = "";
         try {
@@ -457,17 +457,18 @@ public abstract class D1NodeService {
 	        //localId = im.getLocalId(pid.getValue());
 
         } catch (IOException e) {
-            removeSystemMeta(pid);
-        	String msg = "The Node is unable to create the object. " +
-          "There was a problem converting the object to XML";
-        	logMetacat.info(msg);
+            removeSystemMetaAndIdentifier(pid);
+        	String msg = "The Node is unable to create the object "+pid.getValue() +
+          " There was a problem converting the object to XML";
+        	logMetacat.error(msg, e);
           throw new ServiceFailure("1190", msg + ": " + e.getMessage());
 
         } catch (ServiceFailure e) {
-            removeSystemMeta(pid);
+            removeSystemMetaAndIdentifier(pid);
+            logMetacat.error("D1NodeService.create - the node couldn't create the object "+pid.getValue()+" since "+e.getMessage(), e);
             throw e;
         } catch (Exception e) {
-            removeSystemMeta(pid);
+            removeSystemMetaAndIdentifier(pid);
             logMetacat.error("The node is unable to create the object: "+pid.getValue()+ " since " + e.getMessage(), e);
             throw new ServiceFailure("1190", "The node is unable to create the object: " +pid.getValue()+" since "+ e.getMessage());
         }
@@ -478,11 +479,11 @@ public abstract class D1NodeService {
           try {
               localId = insertDataObject(object, pid, session);
           } catch (ServiceFailure e) {
-              removeSystemMeta(pid);
+              removeSystemMetaAndIdentifier(pid);
               throw e;
           } catch (Exception e) {
-              removeSystemMeta(pid);
-              throw new ServiceFailure("1190", "The node is unable to create the object: " + e.getMessage());
+              removeSystemMetaAndIdentifier(pid);
+              throw new ServiceFailure("1190", "The node is unable to create the object "+pid.getValue()+" since " + e.getMessage());
           }
 	      
       }   
@@ -491,11 +492,20 @@ public abstract class D1NodeService {
 
     logMetacat.debug("Done inserting new object: " + pid.getValue());
     
-    // setting the resulting identifier failed
-    if (localId == null ) {
-        removeSystemMeta(pid);
-      throw new ServiceFailure("1190", "The Node is unable to create the object. ");
+    // setting the resulting identifier failed. We will check if the object does exist.
+    try {
+        if (localId == null || !IdentifierManager.getInstance().objectFileExists(localId, isScienceMetadata) ) {
+            removeSystemMetaAndIdentifier(pid);
+          throw new ServiceFailure("1190", "The Node is unable to create the object. "+pid.getValue());
+        }
+    } catch (PropertyNotFoundException e) {
+        removeSystemMetaAndIdentifier(pid);
+        throw new ServiceFailure("1190", "The Node is unable to create the object. "+pid.getValue() + " since "+e.getMessage());
     }
+   
+    
+    
+  
     
     try {
         // submit for indexing
@@ -506,7 +516,7 @@ public abstract class D1NodeService {
 
     resultPid = pid;
     
-    logMetacat.debug("create() complete for object: " + pid.getValue());
+    logMetacat.info("create() complete for object: " + pid.getValue());
 
     return resultPid;
   }
@@ -514,13 +524,20 @@ public abstract class D1NodeService {
   /*
    * Roll-back method when inserting data object fails.
    */
-  protected void removeSystemMeta(Identifier id){
+  protected void removeSystemMetaAndIdentifier(Identifier id){
       if(id != null) {
-          logMetacat.debug("D1NodeService.removeSystemMeta - the system metadata of object "+id.getValue()+" will removed from both hazelcast and db tables");
-      }
-      HazelcastService.getInstance().getSystemMetadataMap().remove(id);
-      if(id != null) {
-          logMetacat.debug("D1NodeService.removeSystemMeta - the system metadata of object "+id.getValue()+" has been removed from both hazelcast and db tables");
+          logMetacat.debug("D1NodeService.removeSystemMeta - the system metadata of object "+id.getValue()+" will removed from both hazelcast and db tables since the object creation failed");
+          HazelcastService.getInstance().getSystemMetadataMap().remove(id);
+          logMetacat.info("D1NodeService.removeSystemMeta - the system metadata of object "+id.getValue()+" has been removed from both hazelcast and db tables since the object creation failed");
+          try {
+              if(IdentifierManager.getInstance().mappingExists(id.getValue())) {
+                 String localId = IdentifierManager.getInstance().getLocalId(id.getValue());
+                 IdentifierManager.getInstance().removeMapping(id.getValue(), localId);
+                 logMetacat.info("D1NodeService.removeSystemMeta - the identifier "+id.getValue()+" and local id "+localId+" have been removed from the identifier table since the object creation failed");
+              }
+          } catch (Exception e) {
+              logMetacat.warn("D1NodeService.removeSysteMeta - can't decide if the mapping of  the pid "+id.getValue()+" exists on the identifier table.");
+          }
       }
   }
   
@@ -1388,7 +1405,7 @@ public abstract class D1NodeService {
    */
   public String insertOrUpdateDocument(InputStream xmlStream, String encoding,  Identifier pid, 
     Session session, String insertOrUpdate, String formatId) 
-    throws ServiceFailure, IOException {
+    throws ServiceFailure, IOException, PropertyNotFoundException{
     
   	logMetacat.debug("Starting to insert xml document...");
     IdentifierManager im = IdentifierManager.getInstance();
@@ -1432,7 +1449,7 @@ public abstract class D1NodeService {
       
     }
 
-    params = new Hashtable<String, String[]>();
+    Hashtable<String, String[]> params = new Hashtable<String, String[]>();
     String[] action = new String[1];
     action[0] = insertOrUpdate;
     params.put("action", action);
@@ -1463,8 +1480,8 @@ public abstract class D1NodeService {
     handler = new MetacatHandler(new Timer());
     String result = handler.handleInsertOrUpdateAction(request.getRemoteAddr(), request.getHeader("User-Agent"), null, 
                         null, params, username, groupnames, false, false, xmlBytes, formatId);
-    
-    if(result.indexOf("<error>") != -1) {
+    boolean isScienceMetadata = true;
+    if(result.indexOf("<error>") != -1 || !IdentifierManager.getInstance().objectFileExists(localId, isScienceMetadata)) {
     	String detailCode = "";
     	if ( insertOrUpdate.equals("insert") ) {
     		// make sure to remove the mapping so that subsequent attempts do not fail with IdentifierNotUnique
@@ -1479,7 +1496,7 @@ public abstract class D1NodeService {
         throw new ServiceFailure(detailCode, 
           "Error inserting or updating document: " +pid.getValue()+" since "+ result);
     }
-    logMetacat.debug("Finsished inserting xml document with id " + localId);
+    logMetacat.info("D1NodeService.insertOrUpdateDocument - Finsished inserting xml document with local id " + localId +" and its pid is "+pid.getValue());
     
     return localId;
   }
@@ -1791,7 +1808,7 @@ public abstract class D1NodeService {
                           " already obsoletes the pid "+sysmeta.getObsoletes().getValue() +". You can't set the object "+pid.getValue()+" to obsolete the pid "+sysmeta.getObsoletes().getValue()+" again.");
               }
           }
-          
+          checkCircularObsoletesChain(sysmeta);
           if(currentSysmeta.getObsoletedBy() == null && sysmeta.getObsoletedBy() != null) {
               //we are setting a value to the obsoletedBy field, so we should make sure that the no another object obsoletes the pid we are updating. 
               String obsoletedBy = existsInObsoletedBy(sysmeta.getObsoletedBy());
@@ -1800,6 +1817,7 @@ public abstract class D1NodeService {
                           " already is obsoleted by the pid "+sysmeta.getObsoletedBy().getValue() +". You can't set the pid "+pid.getValue()+" to be obsoleted by the pid "+sysmeta.getObsoletedBy().getValue()+" again.");
               }
           }
+          checkCircularObsoletedByChain(sysmeta);
       }
       
       // do the actual update
@@ -1921,6 +1939,84 @@ public abstract class D1NodeService {
 	        }
 	    }
 	}
+	
+	
+	/**
+	 * Try to check the scenario of a circular obsoletes chain: 
+	 * A obsoletes B
+	 * B obsoletes C
+	 * C obsoletes A
+	 * @param sys
+	 * @throws InvalidRequest
+	 */
+	private void checkCircularObsoletesChain(SystemMetadata sys) throws InvalidRequest {
+	    if(sys != null && sys.getObsoletes() != null && sys.getObsoletes().getValue() != null && !sys.getObsoletes().getValue().trim().equals("")) {
+	        logMetacat.debug("D1NodeService.checkCircularObsoletesChain - the object "+sys.getIdentifier().getValue() +" obsoletes "+sys.getObsoletes().getValue());
+	        if(sys.getObsoletes().getValue().equals(sys.getIdentifier().getValue())) {
+	            // the obsoletes field points to itself and creates a circular chain
+	            throw new InvalidRequest("4869", "The obsoletes field and identifier of the system metadata has the same value "+sys.getObsoletes().getValue()+
+	                    ". This creates a circular chain and it is illegal.");
+	        } else {
+	            Vector <Identifier> pidList = new Vector<Identifier>();
+	            pidList.add(sys.getIdentifier());
+	            SystemMetadata obsoletesSym = HazelcastService.getInstance().getSystemMetadataMap().get(sys.getObsoletes());
+	            while (obsoletesSym != null && obsoletesSym.getObsoletes() != null && obsoletesSym.getObsoletes().getValue() != null && !obsoletesSym.getObsoletes().getValue().trim().equals("")) {
+	                pidList.add(obsoletesSym.getIdentifier());
+	                logMetacat.debug("D1NodeService.checkCircularObsoletesChain - the object "+obsoletesSym.getIdentifier().getValue() +" obsoletes "+obsoletesSym.getObsoletes().getValue());
+	                /*for(Identifier id: pidList) {
+	                    logMetacat.debug("D1NodeService.checkCircularObsoletesChain - the pid in the chanin"+id.getValue());
+	                }*/
+	                if(pidList.contains(obsoletesSym.getObsoletes())) {
+	                    logMetacat.error("D1NodeService.checkCircularObsoletesChain - when Metacat updated the system metadata of object "+sys.getIdentifier().getValue()+", it found the obsoletes field value "+sys.getObsoletes().getValue()+
+	                            " in its new system metadata creating a circular chain at the object "+obsoletesSym.getObsoletes().getValue()+". This is illegal");
+	                    throw new InvalidRequest("4869", "When Metacat updated the system metadata of object "+sys.getIdentifier().getValue()+", it found the obsoletes field value "+sys.getObsoletes().getValue()+
+                                " in its new system metadata creating a circular chain at the object "+obsoletesSym.getObsoletes().getValue()+". This is illegal");
+	                } else {
+	                    obsoletesSym = HazelcastService.getInstance().getSystemMetadataMap().get(obsoletesSym.getObsoletes());
+	                }
+	            }
+	        }
+	    }
+	}
+	
+	
+	/**
+     * Try to check the scenario of a circular obsoletedBy chain: 
+     * A obsoletedBy B
+     * B obsoletedBy C
+     * C obsoletedBy A
+     * @param sys
+     * @throws InvalidRequest
+     */
+    private void checkCircularObsoletedByChain(SystemMetadata sys) throws InvalidRequest {
+        if(sys != null && sys.getObsoletedBy() != null && sys.getObsoletedBy().getValue() != null && !sys.getObsoletedBy().getValue().trim().equals("")) {
+            logMetacat.debug("D1NodeService.checkCircularObsoletedByChain - the object "+sys.getIdentifier().getValue() +" is obsoletedBy "+sys.getObsoletedBy().getValue());
+            if(sys.getObsoletedBy().getValue().equals(sys.getIdentifier().getValue())) {
+                // the obsoletedBy field points to itself and creates a circular chain
+                throw new InvalidRequest("4869", "The obsoletedBy field and identifier of the system metadata has the same value "+sys.getObsoletedBy().getValue()+
+                        ". This creates a circular chain and it is illegal.");
+            } else {
+                Vector <Identifier> pidList = new Vector<Identifier>();
+                pidList.add(sys.getIdentifier());
+                SystemMetadata obsoletedBySym = HazelcastService.getInstance().getSystemMetadataMap().get(sys.getObsoletedBy());
+                while (obsoletedBySym != null && obsoletedBySym.getObsoletedBy() != null && obsoletedBySym.getObsoletedBy().getValue() != null && !obsoletedBySym.getObsoletedBy().getValue().trim().equals("")) {
+                    pidList.add(obsoletedBySym.getIdentifier());
+                    logMetacat.debug("D1NodeService.checkCircularObsoletedByChain - the object "+obsoletedBySym.getIdentifier().getValue() +" is obsoletedBy "+obsoletedBySym.getObsoletedBy().getValue());
+                    /*for(Identifier id: pidList) {
+                        logMetacat.debug("D1NodeService.checkCircularObsoletedByChain - the pid in the chanin"+id.getValue());
+                    }*/
+                    if(pidList.contains(obsoletedBySym.getObsoletedBy())) {
+                        logMetacat.error("D1NodeService.checkCircularObsoletedByChain - When Metacat updated the system metadata of object "+sys.getIdentifier().getValue()+", it found the obsoletedBy field value "+sys.getObsoletedBy().getValue()+
+                                " in its new system metadata creating a circular chain at the object "+obsoletedBySym.getObsoletedBy().getValue()+". This is illegal");
+                        throw new InvalidRequest("4869",  "When Metacat updated the system metadata of object "+sys.getIdentifier().getValue()+", it found the obsoletedBy field value "+sys.getObsoletedBy().getValue()+
+                                " in its new system metadata creating a circular chain at the object "+obsoletedBySym.getObsoletedBy().getValue()+". This is illegal");
+                    } else {
+                        obsoletedBySym = HazelcastService.getInstance().getSystemMetadataMap().get(obsoletedBySym.getObsoletedBy());
+                    }
+                }
+            }
+        }
+    }
   
   /**
    * Given a Permission, returns a list of all permissions that it encompasses

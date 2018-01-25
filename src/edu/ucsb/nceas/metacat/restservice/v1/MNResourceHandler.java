@@ -210,7 +210,7 @@ public class MNResourceHandler extends D1ResourceHandler {
             // get the rest of the path info
             String extra = null;
                         
-            logMetacat.debug("handling verb " + httpVerb + " request with resource '" + resource + "'");
+            logMetacat.info("MNResourceHanlder.handle - V1 handling verb " + httpVerb + " request with resource '" + resource + "'");
             logMetacat.debug("resource: '" + resource + "'");
             boolean status = false;
             
@@ -1116,7 +1116,7 @@ public class MNResourceHandler extends D1ResourceHandler {
             }
             String extension = ObjectFormatInfo.instance().getExtension(sm.getFormatId().getValue());
             String filename = id.getValue();
-            if (extension != null) {
+            if (extension != null && filename != null && !filename.endsWith(extension)) {
             	filename = id.getValue() + extension;
             }
             response.setContentType(mimeType);
