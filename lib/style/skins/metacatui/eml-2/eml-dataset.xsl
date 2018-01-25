@@ -91,10 +91,11 @@
 	             </xsl:for-each>
              </xsl:if>
              <!-- put in the alternate identifiers -->
-             <xsl:if test="keywordSet">
+             <xsl:if test="alternateIdentifier">
              <xsl:for-each select="alternateIdentifier">
                <xsl:call-template name="resourcealternateIdentifier">
-                 <xsl:with-param name="resfirstColStyle" select="$firstColStyle"/>
+                   <xsl:with-param name="system" select="./@system"/>
+                   <xsl:with-param name="resfirstColStyle" select="$firstColStyle"/>
                  <xsl:with-param name="ressecondColStyle" select="$secondColStyle"/>
                </xsl:call-template>
              </xsl:for-each>
@@ -135,6 +136,21 @@
 					</div>	
 				</div>
              </xsl:if>
+             
+             
+		     <!-- add in additionalInfo -->
+		     <div class="control-group">
+		         <xsl:if test="additionalInfo">
+		           <label class="control-label"><xsl:text>Additional Info</xsl:text></label>
+		           <xsl:for-each select="additionalInfo">
+		       			<div class="controls controls-well">
+			              <xsl:call-template name="text">
+			                <xsl:with-param name="textfirstColStyle" select="$firstColStyle"/>
+			              </xsl:call-template>
+		          		</div>
+		           </xsl:for-each>
+		         </xsl:if>
+		     </div>
 
              <!-- put in the publication date -->
              <xsl:if test="./pubDate">
@@ -422,6 +438,7 @@
            </xsl:for-each>
          </xsl:if>
      </div>
+     
   </xsl:template>
 
   <xsl:template name="datasetresource">
