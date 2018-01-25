@@ -523,7 +523,7 @@ public class MNodeService extends D1NodeService
                 	if(sysmeta.getFormatId() != null) {
                 	    formatId = sysmeta.getFormatId().getValue();
                 	}
-                    localId = insertOrUpdateDocument(object, "UTF-8", pid, session, "update", formatId);
+                    localId = insertOrUpdateDocument(object, "UTF-8", pid, session, "update", formatId, sysmeta.getChecksum());
                     
                     // register the newPid and the generated localId
                     if (newPid != null) {
@@ -533,18 +533,31 @@ public class MNodeService extends D1NodeService
                 } catch (IOException e) {
                     String msg = "The Node is unable to create the object: "+pid.getValue() + "There was a problem converting the object to XML";
                     logMetacat.error(msg, e);
+                    removeIdFromIdentifierTable(newPid);
                     throw new ServiceFailure("1310", msg + ": " + e.getMessage());
 
                 }  catch (PropertyNotFoundException e) {
                     String msg = "The Node is unable to create the object. " +pid.getValue()+ " since the properties are not configured well "+e.getMessage();
                     logMetacat.error(msg, e);
+                    removeIdFromIdentifierTable(newPid);
                     throw new ServiceFailure("1310", msg);
+                } catch (Exception e) {
+                    logMetacat.error("MNService.update - couldn't write the metadata object to the disk since "+e.getMessage(), e);
+                    removeIdFromIdentifierTable(newPid);
+                    throw e;
                 }
 
             } else {
 
                 // update the data object
-                localId = insertDataObject(object, newPid, session);
+                try {
+                    localId = insertDataObject(object, newPid, session, sysmeta.getChecksum());
+                } catch (Exception e) {
+                    logMetacat.error("MNService.update - couldn't write the data object to the disk since "+e.getMessage(), e);
+                    removeIdFromIdentifierTable(newPid);
+                    throw e;
+                }
+                
 
             }
             
@@ -592,6 +605,23 @@ public class MNodeService extends D1NodeService
         long end6 =System.currentTimeMillis();
         logMetacat.debug("MNodeService.update - the total time of updating the old pid " +pid.getValue() +" whth the new pid "+newPid.getValue()+" is "+(end6- startTime)+ " milli seconds.");
         return newPid;
+    }
+    
+    /*
+     * Roll-back method when inserting data object fails.
+     */
+    protected void removeIdFromIdentifierTable(Identifier id){
+        if(id != null) {
+            try {
+                if(IdentifierManager.getInstance().mappingExists(id.getValue())) {
+                   String localId = IdentifierManager.getInstance().getLocalId(id.getValue());
+                   IdentifierManager.getInstance().removeMapping(id.getValue(), localId);
+                   logMetacat.info("MNodeService.removeIdFromIdentifierTable - the identifier "+id.getValue()+" and local id "+localId+" have been removed from the identifier table since the object creation failed");
+                }
+            } catch (Exception e) {
+                logMetacat.warn("MNodeService.removeIdFromIdentifierTable - can't decide if the mapping of  the pid "+id.getValue()+" exists on the identifier table.");
+            }
+        }
     }
 
     public Identifier create(Session session, Identifier pid, InputStream object, SystemMetadata sysmeta) throws InvalidToken, ServiceFailure, NotAuthorized,
@@ -825,7 +855,7 @@ public class MNodeService extends D1NodeService
                         MNode mn = D1Client.getMN(sourceNode);
                         object = mn.getReplica(thisNodeSession, pid);
                     } else {
-                        throw new ServiceFailure("2151", "The version of MNRead service is "+nodeVersion+" in the source node "+sourceNode.getValue()+" and it is supported. Please check the information in the cn");
+                        throw new ServiceFailure("2151", "The version of MNRead service is "+nodeVersion+" in the source node "+sourceNode.getValue()+" and it is not supported. Please check the information in the cn");
                     }
                     
                     logMetacat.info("MNodeService.getReplica() called for identifier "
@@ -874,32 +904,7 @@ public class MNodeService extends D1NodeService
             }
 
             // verify checksum on the object, if supported
-            if (object.markSupported()) {
-                Checksum givenChecksum = sysmeta.getChecksum();
-                Checksum computedChecksum = null;
-                try {
-                    computedChecksum = ChecksumUtil.checksum(object, givenChecksum.getAlgorithm());
-                    object.reset();
-
-                } catch (Exception e) {
-                    String msg = "Error computing checksum on replica: " + e.getMessage();
-                    logMetacat.error(msg);
-                    ServiceFailure sf = new ServiceFailure("2151", msg);
-                    sf.initCause(e);
-                    setReplicationStatus(thisNodeSession, pid, nodeId, ReplicationStatus.FAILED, sf);
-                    throw sf;
-                }
-                if (!givenChecksum.getValue().equals(computedChecksum.getValue())) {
-                    logMetacat.error("Given    checksum for " + pid.getValue() + 
-                        "is " + givenChecksum.getValue());
-                    logMetacat.error("Computed checksum for " + pid.getValue() + 
-                        "is " + computedChecksum.getValue());
-                    String msg = "Computed checksum does not match declared checksum";
-                    failure = new ServiceFailure("2151", msg);
-                    setReplicationStatus(thisNodeSession, pid, nodeId, ReplicationStatus.FAILED, failure);
-                    throw new ServiceFailure("2151", msg);
-                }
-            }
+            logMetacat.info("MNodeService.replicate - the class of object inputstream is "+object.getClass().getCanonicalName()+". Does it support the reset method? The answer is "+object.markSupported());
 
             // add it to local store
             Identifier retPid;
@@ -1983,10 +1988,19 @@ public class MNodeService extends D1NodeService
 		boolean isScienceMetadata = isScienceMetadata(sysmeta);
 		//If it's a science metadata doc, we want to update the packageId first
 		if(isScienceMetadata){
+		    boolean isEML = false;
+		    //Get the formatId
+            ObjectFormatIdentifier objFormatId = originalSystemMetadata.getFormatId();
+            String formatId = objFormatId.getValue();
+            //For all EML formats
+            if(formatId.indexOf("eml") == 0){
+                logMetacat.debug("~~~~~~~~~~~~~~~~~~~~~~MNodeService.publish - the object "+originalIdentifier.getValue()+" with format id "+formatId+" is an eml document.");
+                isEML = true;
+            }
 			InputStream originalObject = this.get(session, originalIdentifier);
 			
 			//Edit the science metadata with the new package Id (EML)
-			inputStream = editScienceMetadata(session, originalObject, originalIdentifier, newIdentifier);
+			inputStream = editScienceMetadata(session, originalObject, originalIdentifier, newIdentifier, isEML, sysmeta);
 		}
 		else{
 			inputStream = this.get(session, originalIdentifier);
@@ -2008,9 +2022,9 @@ public class MNodeService extends D1NodeService
 				oreInputStream = this.get(session, potentialOreIdentifier);
 			} catch (NotFound nf) {
 				// this is probably okay for many sci meta data docs
-				logMetacat.warn("No potential ORE map found for: " + potentialOreIdentifier.getValue());
+				logMetacat.warn("No potential ORE map found for: " + potentialOreIdentifier.getValue()+" by the name convention.");
 				// try the SOLR index
-				List<Identifier> potentialOreIdentifiers = this.lookupOreFor(originalIdentifier, false);
+				List<Identifier> potentialOreIdentifiers = this.lookupOreFor(originalIdentifier);
 				if (potentialOreIdentifiers != null) {
 					potentialOreIdentifier = potentialOreIdentifiers.get(0);
 					try {
@@ -2019,9 +2033,12 @@ public class MNodeService extends D1NodeService
 						// this is probably okay for many sci meta data docs
 						logMetacat.warn("No potential ORE map found for: " + potentialOreIdentifier.getValue());
 					}
+				} else {
+				    logMetacat.warn("MNodeService.publish - No potential ORE map found for the metadata object" + originalIdentifier.getValue()+" by both the name convention or the solr query.");
 				}
 			}
 			if (oreInputStream != null) {
+			    logMetacat.info("MNodeService.publish - we find the old ore document "+potentialOreIdentifier+" for the metacat object "+originalIdentifier);
 				Identifier newOreIdentifier = MNodeService.getInstance(request).generateIdentifier(session, MNodeService.UUID_SCHEME, null);
 	
 				Map<Identifier, Map<Identifier, List<Identifier>>> resourceMapStructure = ResourceMapFactory.getInstance().parseResourceMap(oreInputStream);
@@ -2075,6 +2092,7 @@ public class MNodeService extends D1NodeService
 				}
 				
 				// save the updated ORE
+				logMetacat.info("MNodeService.publish - the new ore document is "+newOreIdentifier.getValue()+" for the doi "+newIdentifier.getValue());
 				this.update(
 						session, 
 						potentialOreIdentifier, 
@@ -2161,7 +2179,7 @@ public class MNodeService extends D1NodeService
 	   * @throws NotFound
 	   * @throws NotImplemented
 	   */
-	  public InputStream editScienceMetadata(Session session, InputStream object, Identifier pid, Identifier newPid)
+	  public InputStream editScienceMetadata(Session session, InputStream object, Identifier pid, Identifier newPid, boolean isEML, SystemMetadata newSysmeta)
 	  	throws ServiceFailure, IOException, UnsupportedEncodingException, InvalidToken, NotAuthorized, NotFound, NotImplemented {
 	    
 		logMetacat.debug("D1NodeService.editScienceMetadata() called.");
@@ -2176,26 +2194,8 @@ public class MNodeService extends D1NodeService
 	    	Document doc = XMLUtilities.getXMLReaderAsDOMDocument(new StringReader(xmlStr));
 		    org.w3c.dom.Node docNode = doc.getDocumentElement();
 
-		    //Get the system metadata for this object
-		    SystemMetadata sysMeta = null;
-		    try{
-		    	sysMeta = getSystemMetadata(session, pid);
-		    } catch(NotAuthorized e){
-		    	throw new ServiceFailure("1030", "D1NodeService.editScienceMetadata(): " + 
-		    			"This session is not authorized to access the system metadata for " +
-		    			pid.getValue() + " : " + e.getMessage());
-		    } catch(NotFound e){
-		    	throw new ServiceFailure("1030", "D1NodeService.editScienceMetadata(): " + 
-		    			"Could not find the system metadata for " +
-		    			pid.getValue() + " : " + e.getMessage());
-		    }
-		    
-		    //Get the formatId
-	        ObjectFormatIdentifier objFormatId = sysMeta.getFormatId();
-	        String formatId = objFormatId.getValue();
-	        
 	    	//For all EML formats
-	        if(formatId.indexOf("eml") == 0){
+	        if(isEML){
 	        	//Update or add the id attribute
 	    	    XMLUtilities.addAttributeNodeToDOMTree(docNode, XPATH_EML_ID, newPid.getValue());
 	        }
@@ -2205,8 +2205,11 @@ public class MNodeService extends D1NodeService
 		    Source xmlSource = new DOMSource(docNode);
 		    Result outputTarget = new StreamResult(outputStream);
 		    TransformerFactory.newInstance().newTransformer().transform(xmlSource, outputTarget);
-		    newObject = new ByteArrayInputStream(outputStream.toByteArray());
-		    
+		    byte[] output = outputStream.toByteArray();
+		    Checksum checksum = ChecksumUtil.checksum(output, newSysmeta.getChecksum().getAlgorithm());
+		    newObject = new ByteArrayInputStream(output);
+		    newSysmeta.setChecksum(checksum);
+		    logMetacat.debug("MNNodeService.editScienceMetadata - the new checksum is "+checksum.getValue() +" with algorithm "+checksum.getAlgorithm()+" for the new pid "+newPid.getValue()+" which is published from the pid "+pid.getValue());
 	    } catch(TransformerException e) {
 	    	throw new ServiceFailure("1030", "MNNodeService.editScienceMetadata(): " +
 	                "Could not update the ID in the XML document for " +
@@ -2215,6 +2218,10 @@ public class MNodeService extends D1NodeService
 	    	throw new ServiceFailure("1030", "MNNodeService.editScienceMetadata(): " +
 	                "Could not update the ID in the XML document for " +
 	                "pid " + pid.getValue() +" : " + e.getMessage());
+	    } catch(NoSuchAlgorithmException e) {
+	        throw new ServiceFailure("1030", "MNNodeService.editScienceMetadata(): " +
+                    "Could not update the ID in the XML document for " +
+                    "pid " + pid.getValue() +" since the checksum can't be computed : " + e.getMessage());
 	    }
 	    
 	    return newObject;
@@ -2256,6 +2263,39 @@ public class MNodeService extends D1NodeService
 		return retList;
 	}
 	
+	
+	/**
+     * Determines if we already have registered an ORE map for this package
+     * NOTE: uses a solr query to locate OREs for the object
+     * @todo should be consolidate with the above method.
+     * @param guid of the EML/packaging object
+     */
+    private List<Identifier> lookupOreFor(Identifier guid) {
+        // Search for the ORE if we can find it
+        String pid = guid.getValue();
+        List<Identifier> retList = null;
+        try {
+            String query = "fl=id,resourceMap&wt=xml&q=id:\"" + pid + "\"";
+            InputStream results = this.query(null, "solr", query);
+            org.w3c.dom.Node rootNode = XMLUtilities.getXMLReaderAsDOMTreeRootNode(new InputStreamReader(results, "UTF-8"));
+            //String resultString = XMLUtilities.getDOMTreeAsString(rootNode);
+            org.w3c.dom.NodeList nodeList = XMLUtilities.getNodeListWithXPath(rootNode, "//arr[@name=\"resourceMap\"]/str");
+            if (nodeList != null && nodeList.getLength() > 0) {
+                retList = new ArrayList<Identifier>();
+                for (int i = 0; i < nodeList.getLength(); i++) {
+                    String found = nodeList.item(i).getFirstChild().getNodeValue();
+                    logMetacat.debug("MNodeService.lookupOreRor - found the resource map"+found);
+                    Identifier oreId = new Identifier();
+                    oreId.setValue(found);
+                    retList.add(oreId);
+                }
+            }
+        } catch (Exception e) {
+            logMetacat.error("Error checking for resourceMap[s] on pid " + pid + ". " + e.getMessage(), e);
+        }
+        
+        return retList;
+    }
 
 	@Override
 	public InputStream getPackage(Session session, ObjectFormatIdentifier formatId,

@@ -28,6 +28,7 @@ package edu.ucsb.nceas.metacat.dataone;
 
 
 
+import edu.ucsb.nceas.metacat.IdentifierManager;
 import edu.ucsb.nceas.metacat.dataone.CNodeService;
 import edu.ucsb.nceas.metacat.dataone.MNodeService;
 import edu.ucsb.nceas.metacat.properties.SkinPropertyService;
@@ -95,6 +96,7 @@ import org.dataone.service.types.v1.ObjectFormatIdentifier;
 import org.dataone.service.types.v1.ObjectList;
 import org.dataone.service.types.v1.Permission;
 import org.dataone.service.types.v1.Person;
+import org.dataone.service.types.v1.ReplicationPolicy;
 import org.dataone.service.types.v1.Session;
 import org.dataone.service.types.v1.Subject;
 import org.dataone.service.types.v1.SubjectInfo;
@@ -143,9 +145,13 @@ public class MNodeServiceTest extends D1NodeServiceTest {
     TestSuite suite = new TestSuite();
     suite.addTest(new MNodeServiceTest("initialize"));
     // MNStorage tests
+    suite.addTest(new MNodeServiceTest("testMissMatchMetadataCreate"));
+    suite.addTest(new MNodeServiceTest("testMissMatchChecksumInCreate"));
     suite.addTest(new MNodeServiceTest("testCreate"));
     suite.addTest(new MNodeServiceTest("testCreateInvalidIdentifier"));
     suite.addTest(new MNodeServiceTest("testUpdate"));
+    suite.addTest(new MNodeServiceTest("testMissMatchedCheckSumUpdate"));
+    suite.addTest(new MNodeServiceTest("testMissMatchedChecksumUpdateSciMetadata"));
     suite.addTest(new MNodeServiceTest("testUpdateSystemMetadata"));
     suite.addTest(new MNodeServiceTest("testUpdateObsoletesAndObsoletedBy"));
     suite.addTest(new MNodeServiceTest("testArchive"));
@@ -437,6 +443,103 @@ public class MNodeServiceTest extends D1NodeServiceTest {
     }
       
   }
+  
+  /**
+   * Test object creation
+   */
+  public void testMissMatchChecksumInCreate() {
+    printTestHeader("testMissMatchChecksumInCreate");
+    Identifier guid = new Identifier();
+    guid.setValue("testCreate." + System.currentTimeMillis());
+    Session session = null;
+    try {
+      session = getTestSession();
+      InputStream object = new ByteArrayInputStream("test".getBytes("UTF-8"));
+      SystemMetadata sysmeta = createSystemMetadata(guid, session.getSubject(), object);
+      Node localNode = MNodeService.getInstance(request).getCapabilities();
+      ReplicationPolicy rePolicy = new ReplicationPolicy();
+      rePolicy.setReplicationAllowed(true);
+      rePolicy.setNumberReplicas(new Integer(3));
+      rePolicy.addPreferredMemberNode(localNode.getIdentifier());
+      sysmeta.setReplicationPolicy(rePolicy);
+      Checksum checksum = new Checksum();
+      checksum.setAlgorithm("md5");
+      checksum.setValue("098F6BCD4621D373CADE4E832627B4F9");
+      sysmeta.setChecksum(checksum);
+      Identifier pid = MNodeService.getInstance(request).create(session, guid, object, sysmeta);
+      fail("It should fail since the checksum doesn't match.");
+    } catch (InvalidSystemMetadata ee) {
+      //ee.printStackTrace();
+      try {
+          Thread.sleep(5000);
+          MNodeService.getInstance(request).getSystemMetadata(session, guid);
+          fail("We shouldn't get here since the guid "+guid.getValue()+" was deleted.");
+      } catch (NotFound e) {
+         //here is okay.
+      } catch (Exception e) {
+          fail("Unexpected error: " + e.getMessage());
+      }
+      try {
+          assertTrue(!IdentifierManager.getInstance().identifierExists(guid.getValue()));
+      } catch (Exception e) {
+          fail("Unexpected error: " + e.getMessage());
+      }
+      
+    } catch (Exception e) {
+        fail("Unexpected error: " + e.getMessage());
+    }
+  }
+  
+  
+  /**
+   * Test miss-match checksum for metacat object.
+   */
+  public void testMissMatchMetadataCreate() {
+      printTestHeader("testMissMatchMetadataCreate");
+      Identifier guid = new Identifier();
+      guid.setValue("testCreate." + System.currentTimeMillis());
+      Session session = null;
+      try {
+        session = getTestSession();
+        InputStream object = new FileInputStream(new File(MockReplicationMNode.replicationSourceFile));
+        SystemMetadata sysmeta = createSystemMetadata(guid, session.getSubject(), object);
+        ObjectFormatIdentifier formatId = new ObjectFormatIdentifier();
+        formatId.setValue("eml://ecoinformatics.org/eml-2.0.1");
+        sysmeta.setFormatId(formatId);
+        Node localNode = MNodeService.getInstance(request).getCapabilities();
+        ReplicationPolicy rePolicy = new ReplicationPolicy();
+        rePolicy.setReplicationAllowed(true);
+        rePolicy.setNumberReplicas(new Integer(3));
+        rePolicy.addPreferredMemberNode(localNode.getIdentifier());
+        sysmeta.setReplicationPolicy(rePolicy);
+        Checksum checksum = new Checksum();
+        checksum.setAlgorithm("md5");
+        checksum.setValue("098F6BCD4621D373CADE4E832627B4F9");
+        sysmeta.setChecksum(checksum);
+        object = new FileInputStream(new File(MockReplicationMNode.replicationSourceFile));
+        Identifier pid = MNodeService.getInstance(request).create(session, guid, object, sysmeta);
+        fail("It should fail since the checksum doesn't match.");
+      } catch (ServiceFailure ee) {
+        //ee.printStackTrace();
+        try {
+            Thread.sleep(5000);
+            MNodeService.getInstance(request).getSystemMetadata(session, guid);
+            fail("We shouldn't get here since the guid "+guid.getValue()+" was deleted.");
+        } catch (NotFound e) {
+           //here is okay.
+        } catch (Exception e) {
+            fail("Unexpected error: " + e.getMessage());
+        }
+        try {
+            assertTrue(!IdentifierManager.getInstance().identifierExists(guid.getValue()));
+        } catch (Exception e) {
+            fail("Unexpected error: " + e.getMessage());
+        }
+        
+      } catch (Exception e) {
+          fail("Unexpected error: " + e.getMessage());
+      }
+  }
 
   /**
    * test object deletion
@@ -507,6 +610,7 @@ public class MNodeServiceTest extends D1NodeServiceTest {
       Identifier pid = 
         MNodeService.getInstance(request).create(session, guid, object, sysmeta);
       
+      object = new ByteArrayInputStream("test".getBytes("UTF-8"));
       SystemMetadata newSysMeta = createSystemMetadata(newPid, session.getSubject(), object);
       newSysMeta.setArchived(true);
       System.out.println("the pid is =======!!!!!!!!!!!! "+pid.getValue());
@@ -525,6 +629,7 @@ public class MNodeServiceTest extends D1NodeServiceTest {
       //try to update an archived object and need to get an exception
       Identifier newPid2 = new Identifier();
       newPid2.setValue("testUpdate." + (System.currentTimeMillis() + 2)); // ensure it is different from original
+      object = new ByteArrayInputStream("test".getBytes("UTF-8"));
       SystemMetadata newSysMeta2 = createSystemMetadata(newPid2, session.getSubject(), object);
       try {
            updatedPid = 
@@ -603,6 +708,117 @@ public class MNodeServiceTest extends D1NodeServiceTest {
     }
   }
   
+  /**
+   * Test object updating
+   */
+  public void testMissMatchedCheckSumUpdate() {
+    printTestHeader("testMissMatchedCheckSumUpdate");
+    
+    try {
+      Session session = getTestSession();
+      Identifier guid = new Identifier();
+      guid.setValue("testUpdate." + System.currentTimeMillis());
+      InputStream object = new ByteArrayInputStream("test".getBytes("UTF-8"));
+      SystemMetadata sysmeta = createSystemMetadata(guid, session.getSubject(), object);
+      System.out.println("========= the old pid is "+guid.getValue());
+      Identifier newPid = new Identifier();
+      newPid.setValue("testUpdate." + (System.currentTimeMillis() + 1)); // ensure it is different from original
+      Identifier pid = 
+        MNodeService.getInstance(request).create(session, guid, object, sysmeta);
+      
+      object = new ByteArrayInputStream("test".getBytes("UTF-8"));
+      SystemMetadata newSysMeta = createSystemMetadata(newPid, session.getSubject(), object);
+      Checksum checksum = newSysMeta.getChecksum();
+      checksum.setValue("foo-checksum");
+      newSysMeta.setChecksum(checksum);
+      System.out.println("========= the new pid is "+newPid.getValue());
+      // do the update and it should fail
+      try {
+          MNodeService.getInstance(request).update(session, pid, object, newPid, newSysMeta);
+          fail("we shouldn't get here since the checksum is wrong");
+      } catch (InvalidSystemMetadata ee) {
+          try {
+              MNodeService.getInstance(request).getSystemMetadata(session, newPid);
+              fail("we shouldn't get here since the newPid "+newPid+" shouldn't be create.");
+          } catch (NotFound eeee) {
+              
+          }
+          
+      }catch (Exception eee) {
+          eee.printStackTrace();
+          fail("Unexpected error in the update: " + eee.getMessage());
+      }
+        
+    } catch (Exception e) {
+      e.printStackTrace();
+      fail("Unexpected error: " + e.getMessage());
+
+    }
+  }
+  
+  
+  /**
+   * Test object updating
+   */
+  public void testMissMatchedChecksumUpdateSciMetadata() {
+    printTestHeader("testMissMatchedChecksumUpdateSciMetadata");
+    
+    try {
+      String st1="<eml:eml xmlns:eml=\"eml://ecoinformatics.org/eml-2.1.1\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" packageId=\"tao.13397.1\" system=\"knb\" xsi:schemaLocation=\"eml://ecoinformatics.org/eml-2.1.1 eml.xsd\">"
+                  +"<access authSystem=\"knb\" order=\"allowFirst\">"
+                  +"<allow><principal>public</principal><permission>read</permission></allow></access>"
+                  +"<dataset><title>test</title><creator id=\"1445543475577\"><individualName><surName>test</surName></individualName></creator>"
+                  +"<contact id=\"1445543479900\"><individualName><surName>test</surName></individualName></contact></dataset></eml:eml>";
+      Session session = getTestSession();
+      Identifier guid = new Identifier();
+      guid.setValue("testUpdate." + System.currentTimeMillis());
+      InputStream object = new ByteArrayInputStream(st1.getBytes("UTF-8"));
+      SystemMetadata sysmeta = createSystemMetadata(guid, session.getSubject(), object);
+      sysmeta.setFormatId(ObjectFormatCache.getInstance().getFormat("eml://ecoinformatics.org/eml-2.1.1").getFormatId());
+      MNodeService.getInstance(request).create(session, guid, object, sysmeta);
+      System.out.println("=================the old pid is "+guid.getValue());
+      
+      String st2="<eml:eml xmlns:eml=\"eml://ecoinformatics.org/eml-2.1.1\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" packageId=\"tao.13397.1\" system=\"knb\" xsi:schemaLocation=\"eml://ecoinformatics.org/eml-2.1.1 eml.xsd\">"
+              +"<access authSystem=\"knb\" order=\"allowFirst\">"
+              +"<allow><principal>public</principal><permission>read</permission></allow></access>"
+              +"<dataset><title>test2</title><creator id=\"1445543475577\"><individualName><surName>test</surName></individualName></creator>"
+              +"<contact id=\"1445543479900\"><individualName><surName>test</surName></individualName></contact></dataset></eml:eml>";
+      Identifier newPid = new Identifier();
+      newPid.setValue("testUpdate." + (System.currentTimeMillis() + 1)); // ensure it is different from original
+      System.out.println("=================the new pid is "+newPid.getValue());
+      object = new ByteArrayInputStream(st2.getBytes("UTF-8"));
+      SystemMetadata sysmeta2 = createSystemMetadata(newPid, session.getSubject(), object);
+      sysmeta2.setFormatId(ObjectFormatCache.getInstance().getFormat("eml://ecoinformatics.org/eml-2.1.1").getFormatId());
+      sysmeta2.setObsoletes(guid);
+      Checksum sum1= sysmeta2.getChecksum();
+      sum1.setValue("foo checksum");
+      sysmeta2.setChecksum(sum1);
+      object = new ByteArrayInputStream(st2.getBytes("UTF-8"));
+      // do the update and it should fail
+      try {
+          MNodeService.getInstance(request).update(session, guid, object, newPid, sysmeta2);
+          fail("we shouldn't get here since the checksum is wrong");
+      } catch (ServiceFailure ee) {
+          try {
+              MNodeService.getInstance(request).getSystemMetadata(session, newPid);
+              fail("we shouldn't get here since the newPid "+newPid+" shouldn't be create.");
+          } catch (NotFound eeee) {
+              
+          }
+          
+      }catch (Exception eee) {
+          eee.printStackTrace();
+          fail("Unexpected error in the update: " + eee.getMessage());
+      }
+    
+
+    } catch (Exception e) {
+      e.printStackTrace();
+      fail("Unexpected error: " + e.getMessage());
+
+    }
+  }
+
   
   /**
    * Test object updating
@@ -691,10 +907,7 @@ public class MNodeServiceTest extends D1NodeServiceTest {
   }
 
   /**
-   * We currently expect this unit test to fail because it should rely on a different member node
-   * to retrieve the object from. Currently it gets the object from itself and throws 
-   * and expected error for duplicate entry.
-   * 
+   * Test the replicate method. The getReplica method is from a MockMN.
    */
   public void testReplicate() {
       printTestHeader("testReplicate");
@@ -702,21 +915,21 @@ public class MNodeServiceTest extends D1NodeServiceTest {
         Session session = getTestSession();
         Identifier guid = new Identifier();
         guid.setValue("testReplicate." + System.currentTimeMillis());
-        InputStream object = new ByteArrayInputStream("test".getBytes("UTF-8"));
+        System.out.println("======================the id need to be replicated is "+guid.getValue());
+        InputStream object = new FileInputStream(new File(MockReplicationMNode.replicationSourceFile));
         SystemMetadata sysmeta = createSystemMetadata(guid, session.getSubject(), object);
-        // save locally
-        Identifier pid = MNodeService.getInstance(request).create(session, guid, object, sysmeta);
-        // get our node reference (attempting to replicate with self)
-        NodeReference sourceNode = MNodeService.getInstance(request).getCapabilities().getIdentifier();
-        // attempt to replicate with ourselves -- this should fail!
-      boolean result = false;
-      try {
+        ObjectFormatIdentifier formatId = new ObjectFormatIdentifier();
+        formatId.setValue("eml://ecoinformatics.org/eml-2.0.1");
+        sysmeta.setFormatId(formatId);
+        NodeReference sourceNode = new NodeReference();
+        sourceNode.setValue(MockReplicationMNode.NODE_ID);
+        sysmeta.setAuthoritativeMemberNode(sourceNode);
+        sysmeta.setOriginMemberNode(sourceNode);
+        boolean result = false;
         result = MNodeService.getInstance(request).replicate(session, sysmeta, sourceNode);
-      } catch (Exception inu) {
-        // we are expecting this to fail since we already have the doc
-        result = true;
-      }
-      assertTrue(result);
+        assertTrue(result);
+        SystemMetadata sys =  MNodeService.getInstance(request).getSystemMetadata(session, guid);
+        assertTrue(sys.getIdentifier().equals(guid));
       } catch (Exception e) {
         e.printStackTrace();
       fail("Probably not yet implemented: " + e.getMessage());
@@ -1625,6 +1838,7 @@ public class MNodeServiceTest extends D1NodeServiceTest {
           
           Identifier newPid = new Identifier();
           newPid.setValue("testCreateAndUpdate." + (System.currentTimeMillis() + 1)); // ensure it is different from original
+          object = new ByteArrayInputStream(FileUtils.readFileToByteArray(new File(unmatchingEncodingFilePath)));
           SystemMetadata newSysMeta = createSystemMetadata(newPid, session.getSubject(), object);
                 
           // do the update

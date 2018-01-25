@@ -75,6 +75,7 @@ import org.apache.commons.io.input.XmlStreamReader;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.log4j.Logger;
 import org.dataone.service.types.v1.AccessPolicy;
+import org.dataone.service.types.v1.Checksum;
 import org.dataone.service.types.v1.Event;
 import org.dataone.service.types.v1.Identifier;
 import org.dataone.service.types.v1.Session;
@@ -82,7 +83,6 @@ import org.dataone.service.types.v2.SystemMetadata;
 import org.ecoinformatics.eml.EMLParser;
 
 import au.com.bytecode.opencsv.CSVWriter;
-
 import edu.ucsb.nceas.metacat.accesscontrol.AccessControlException;
 import edu.ucsb.nceas.metacat.accesscontrol.AccessControlForSingleFile;
 import edu.ucsb.nceas.utilities.access.AccessControlInterface;
@@ -1389,6 +1389,34 @@ public class MetacatHandler {
      */
     private String generateOutputName(String docid,
             Hashtable<String, String[]> params, DocumentImpl doc) {
+    	SystemMetadata sysMeta = null;
+    	String guid = null;
+    	int rev = -1;
+    	String fileName = null;
+    	
+    	// First, if SystemMetadata.fileName is present, use it
+    	try {
+    		rev = Integer.valueOf(DocumentUtil.getRevisionStringFromString(docid)).intValue();
+    		docid = DocumentUtil.getDocIdFromAccessionNumber(docid);
+    		if (rev > 0 ) {
+				guid = IdentifierManager.getInstance().getGUID(docid, rev);
+				if ( guid != null ) {
+					sysMeta = IdentifierManager.getInstance().getSystemMetadata(guid);
+					if ( sysMeta != null ) {
+						fileName = sysMeta.getFileName();
+					}
+				}
+			}
+		} catch (McdbDocNotFoundException e) {
+			logMetacat.debug("Couldn't find the given docid: " + e.getMessage());
+			
+		}
+    	
+    	if (fileName != null ) {
+    		return fileName;
+    	}
+    	
+    	// Otherwise, generate a name
         String outputname = null;
         // check for the existence of a metadatadocid parameter,
         // if this is sent, then send a filename which contains both
@@ -1628,7 +1656,7 @@ public class MetacatHandler {
      */
     public String handleInsertOrUpdateAction(String ipAddress, String userAgent,
             HttpServletResponse response, PrintWriter out, Hashtable<String, String[]> params,
-            String user, String[] groups, boolean generateSystemMetadata, boolean writeAccessRules, byte[] xmlBytes, String formatId) {
+            String user, String[] groups, boolean generateSystemMetadata, boolean writeAccessRules, byte[] xmlBytes, String formatId, Checksum checksum) {
         Logger logMetacat = Logger.getLogger(MetacatHandler.class);
         DBConnection dbConn = null;
         int serialNumber = -1;
@@ -1830,7 +1858,7 @@ public class MetacatHandler {
               
               } else {*/
               newdocid = documentWrapper.write(dbConn, doctext[0], pub, dtd,
-                          doAction, accNumber, user, groups, xmlBytes, schemaLocation);
+                          doAction, accNumber, user, groups, xmlBytes, schemaLocation, checksum);
             
               EventLog.getInstance().log(ipAddress, userAgent, user, accNumber, action[0]);
               
@@ -3236,8 +3264,9 @@ public class MetacatHandler {
                 boolean writeAccessRules = true;
                 //call the insert routine
                 String formatId = null;
+                Checksum checksum = null;//for Metacat API, we don't calculate the checksum
                 handleInsertOrUpdateAction(request.getRemoteAddr(), request.getHeader("User-Agent"), response, out, 
-                          params, username, groupnames, true, writeAccessRules, null, formatId);
+                          params, username, groupnames, true, writeAccessRules, null, formatId, checksum);
               }
               catch(Exception e)
               {
