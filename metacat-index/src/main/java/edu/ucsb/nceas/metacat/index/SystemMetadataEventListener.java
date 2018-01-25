@@ -110,7 +110,7 @@ public class SystemMetadataEventListener implements EntryListener<Identifier, In
     }
 
     public void entryRemoved(EntryEvent<Identifier, IndexTask> entryEvent) {
-    	// do nothing
+        // do nothing
     }
     public void entryEvicted(EntryEvent<Identifier, IndexTask> entryEvent) {
     	// do nothing
@@ -143,7 +143,8 @@ public class SystemMetadataEventListener implements EntryListener<Identifier, In
 		}
 		
 		if (systemMetadata != null) {
-			solrIndex.update(pid, systemMetadata);
+		    solrIndex.update(pid, systemMetadata);
+			
 		}
 		if (fields != null) {
 			solrIndex.insertFields(pid, fields);

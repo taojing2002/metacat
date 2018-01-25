@@ -51,6 +51,7 @@ import javax.servlet.http.HttpSession;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 
+import edu.ucsb.nceas.metacat.common.query.EnabledQueryEngines;
 import edu.ucsb.nceas.metacat.database.DBConnection;
 import edu.ucsb.nceas.metacat.database.DBConnectionPool;
 import edu.ucsb.nceas.metacat.database.DatabaseService;
@@ -508,6 +509,12 @@ public class MetaCatServlet extends HttpServlet {
 	 */
     private void checkIndexPaths() {
         Logger logMetacat = Logger.getLogger(MetaCatServlet.class);
+    	logMetacat.debug("MetaCatServlet.checkIndexPaths - starting....");
+    	if(!EnabledQueryEngines.getInstance().isEnabled(EnabledQueryEngines.PATHQUERYENGINE)) {
+    	    logMetacat.info("MetaCatServlet.checkIndexPaths - the pathquery is disabled and it does nothing for checking path_index");
+            return;
+        }
+    	logMetacat.debug("MetaCatServlet.checkIndexPaths - after checking is the pathquery enabled or not...");
 
         Vector<String> pathsForIndexing = null;
         try {  
@@ -904,7 +911,7 @@ public class MetaCatServlet extends HttpServlet {
 				PrintWriter out = response.getWriter();
 				if ((userName != null) && !userName.equals("public")) {
 					handler.handleInsertOrUpdateAction(request.getRemoteAddr(), request.getHeader("User-Agent"), response, out, params, userName,
-							groupNames, true, true);
+							groupNames, true, true, null);
 				} else {
 					response.setContentType("text/xml");
 					out.println("<?xml version=\"1.0\"?>");

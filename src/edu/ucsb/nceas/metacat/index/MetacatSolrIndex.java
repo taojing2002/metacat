@@ -22,7 +22,6 @@
  */
 package edu.ucsb.nceas.metacat.index;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -173,6 +172,8 @@ public class MetacatSolrIndex {
      
     }
 
+   
+    
     public void submit(Identifier pid, SystemMetadata systemMetadata, Map<String, List<Object>> fields, boolean followRevisions) {
     	IndexTask task = new IndexTask();
     	task.setSystemMetadata(systemMetadata);
@@ -186,8 +187,8 @@ public class MetacatSolrIndex {
 		    Map<String, List<Object>> obsoletedFields = EventLog.getInstance().getIndexFields(obsoletedPid, Event.READ.xmlValue());
 			this.submit(obsoletedPid, obsoletedSysMeta , obsoletedFields, followRevisions);
 		}
-		
     }
+    
     
 
 }

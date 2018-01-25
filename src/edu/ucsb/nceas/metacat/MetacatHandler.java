@@ -1628,7 +1628,7 @@ public class MetacatHandler {
      */
     public String handleInsertOrUpdateAction(String ipAddress, String userAgent,
             HttpServletResponse response, PrintWriter out, Hashtable<String, String[]> params,
-            String user, String[] groups, boolean generateSystemMetadata, boolean writeAccessRules) {
+            String user, String[] groups, boolean generateSystemMetadata, boolean writeAccessRules, byte[] xmlBytes) {
         Logger logMetacat = Logger.getLogger(MetacatHandler.class);
         DBConnection dbConn = null;
         int serialNumber = -1;
@@ -1805,7 +1805,7 @@ public class MetacatHandler {
               
               } else {*/
               newdocid = documentWrapper.write(dbConn, doctext[0], pub, dtd,
-                          doAction, accNumber, user, groups);
+                          doAction, accNumber, user, groups, xmlBytes);
             
               EventLog.getInstance().log(ipAddress, userAgent, user, accNumber, action[0]);
               
@@ -1839,14 +1839,24 @@ public class MetacatHandler {
                   
                   // handle inserts
                   try {
-                	// create the system metadata  
-                    sysMeta = SystemMetadataFactory.createSystemMetadata(newdocid, true, false);
+                	// create the system metadata. During the creatation, the data file in the eml may need to be reindexed.
+                    boolean reindexDataObject = true;
+                    sysMeta = SystemMetadataFactory.createSystemMetadata(reindexDataObject, newdocid, true, false);
                     
                     // save it to the map
                     HazelcastService.getInstance().getSystemMetadataMap().put(sysMeta.getIdentifier(), sysMeta);
                     
                     // submit for indexing
                     MetacatSolrIndex.getInstance().submit(sysMeta.getIdentifier(), sysMeta, null, true);
+                    
+                    // [re]index the resource map now that everything is saved
+                    // see: https://projects.ecoinformatics.org/ecoinfo/issues/6520
+                    Identifier potentialOreIdentifier = new Identifier();
+        			potentialOreIdentifier.setValue(SystemMetadataFactory.RESOURCE_MAP_PREFIX + sysMeta.getIdentifier().getValue());
+        			SystemMetadata oreSystemMetadata = HazelcastService.getInstance().getSystemMetadataMap().get(potentialOreIdentifier);
+        			if (oreSystemMetadata != null) {
+                        MetacatSolrIndex.getInstance().submit(oreSystemMetadata.getIdentifier(), oreSystemMetadata, null, true);
+        			}
                     
                   } catch ( McdbDocNotFoundException dnfe ) {
                     logMetacat.debug(
@@ -3157,7 +3167,7 @@ public class MetacatHandler {
                 boolean writeAccessRules = true;
                 //call the insert routine
                 handleInsertOrUpdateAction(request.getRemoteAddr(), request.getHeader("User-Agent"), response, out, 
-                          params, username, groupnames, true, writeAccessRules);
+                          params, username, groupnames, true, writeAccessRules, null);
               }
               catch(Exception e)
               {

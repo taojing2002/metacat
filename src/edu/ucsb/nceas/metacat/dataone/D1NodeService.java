@@ -91,6 +91,8 @@ import edu.ucsb.nceas.metacat.replication.ForceReplicationHandler;
 import edu.ucsb.nceas.utilities.PropertyNotFoundException;
 
 public abstract class D1NodeService {
+    
+  public static final String DELETEDMESSAGE = "The object with the PID has been deleted from the node.";
   
   private static Logger logMetacat = Logger.getLogger(D1NodeService.class);
 
@@ -399,10 +401,10 @@ public abstract class D1NodeService {
       if ( isScienceMetadata(sysmeta) ) {
         
         // CASE METADATA:
-      	String objectAsXML = "";
+      	//String objectAsXML = "";
         try {
-	        objectAsXML = IOUtils.toString(object, "UTF-8");
-	        localId = insertOrUpdateDocument(objectAsXML, pid, session, "insert");
+	        //objectAsXML = IOUtils.toString(object, "UTF-8");
+	        localId = insertOrUpdateDocument(object, "UTF-8", pid, session, "insert");
 	        //localId = im.getLocalId(pid.getValue());
 
         } catch (IOException e) {
@@ -575,10 +577,14 @@ public abstract class D1NodeService {
       try {
         inputStream = handler.read(localId);
       } catch (Exception e) {
+        String error ="";
+        if(EventLog.getInstance().isDeleted(localId)) {
+            error=DELETEDMESSAGE;
+        }
         throw new NotFound("1020", "The object specified by " + 
             pid.getValue() +
-            "could not be returned due to error: " +
-            e.getMessage());
+            " could not be returned due to error: " +
+            e.getMessage()+". "+error);
       }
     }
 
@@ -711,7 +717,21 @@ public abstract class D1NodeService {
         
         // It wasn't in the map
         if ( systemMetadata == null ) {
-            throw new NotFound("1420", "No record found for: " + pid.getValue());
+            String error ="";
+            String localId = null;
+            try {
+                localId = IdentifierManager.getInstance().getLocalId(pid.getValue());
+              
+             } catch (Exception e) {
+                logMetacat.warn("Couldn't find the local id for the pid "+pid.getValue());
+            }
+            
+            if(localId != null && EventLog.getInstance().isDeleted(localId)) {
+                error = DELETEDMESSAGE;
+            } else if (localId == null && EventLog.getInstance().isDeleted(pid.getValue())) {
+                error = DELETEDMESSAGE;
+            }
+            throw new NotFound("1420", "No record found for: " + pid.getValue()+". "+error);
         }
         
         return systemMetadata;
@@ -979,7 +999,21 @@ public abstract class D1NodeService {
     
     // throw not found if it was not found
     if (systemMetadata == null) {
-    	throw new NotFound("1800", "No system metadata could be found for given PID: " + pidStr);
+        String localId = null;
+        String error = "No system metadata could be found for given PID: " + pidStr;
+        try {
+            localId = IdentifierManager.getInstance().getLocalId(pid.getValue());
+          
+         } catch (Exception e) {
+            logMetacat.warn("Couldn't find the local id for the pid "+pidStr);
+        }
+        
+        if(localId != null && EventLog.getInstance().isDeleted(localId)) {
+            error = error + ". "+DELETEDMESSAGE;
+        } else if (localId == null && EventLog.getInstance().isDeleted(pid.getValue())) {
+            error = error + ". "+DELETEDMESSAGE;
+        }
+    	throw new NotFound("1800", error);
     }
 	    
     // do we own it?
@@ -1107,18 +1141,20 @@ public abstract class D1NodeService {
    * @param pid - the identifier to be used for the resulting object
    * 
    * @return localId - the resulting docid of the document created or updated
+ * @throws IOException 
    * 
    */
-  public String insertOrUpdateDocument(String xml, Identifier pid, 
+  public String insertOrUpdateDocument(InputStream xml, String encoding, Identifier pid, 
     Session session, String insertOrUpdate) 
-    throws ServiceFailure {
+    throws ServiceFailure, IOException {
     
   	logMetacat.debug("Starting to insert xml document...");
     IdentifierManager im = IdentifierManager.getInstance();
 
     // generate pid/localId pair for sysmeta
     String localId = null;
-    
+    byte[] xmlBytes  = IOUtils.toByteArray(xml);
+    String xmlStr = new String(xmlBytes, encoding);
     if(insertOrUpdate.equals("insert")) {
       localId = im.generateLocalId(pid.getValue(), 1);
       
@@ -1158,7 +1194,7 @@ public abstract class D1NodeService {
     docid[0] = localId;
     params.put("docid", docid);
     String[] doctext = new String[1];
-    doctext[0] = xml;
+    doctext[0] = xmlStr;
     params.put("doctext", doctext);
     
     String username = Constants.SUBJECT_PUBLIC;
@@ -1179,7 +1215,7 @@ public abstract class D1NodeService {
     // do the insert or update action
     handler = new MetacatHandler(new Timer());
     String result = handler.handleInsertOrUpdateAction(request.getRemoteAddr(), request.getHeader("User-Agent"), null, 
-                        null, params, username, groupnames, false, false);
+                        null, params, username, groupnames, false, false, xmlBytes);
     
     if(result.indexOf("<error>") != -1) {
     	String detailCode = "";

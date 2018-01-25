@@ -50,6 +50,7 @@ import java.util.Map;
 import junit.framework.Test;
 import junit.framework.TestSuite;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.dataone.client.ObjectFormatCache;
 import org.dataone.configuration.Settings;
@@ -84,6 +85,7 @@ import org.dataone.service.types.v1.Session;
 import org.dataone.service.types.v1.Subject;
 import org.dataone.service.types.v1.SubjectInfo;
 import org.dataone.service.types.v1.SystemMetadata;
+import org.dataone.service.types.v1.util.ChecksumUtil;
 import org.dspace.foresite.ResourceMap;
 import org.jibx.runtime.JiBXException;
 import org.junit.After;
@@ -97,6 +99,7 @@ import org.junit.Before;
  *
  */
 public class MNodeServiceTest extends D1NodeServiceTest {
+    private static String unmatchingEncodingFilePath = "test/incorrect-encoding-declaration.xml";
 
   /**
    * Set up the test fixtures
@@ -158,8 +161,9 @@ public class MNodeServiceTest extends D1NodeServiceTest {
     // MN packaging tests
     suite.addTest(new MNodeServiceTest("testGetPackage"));
     suite.addTest(new MNodeServiceTest("testGetOREPackage"));
+    suite.addTest(new MNodeServiceTest("testReadDeletedObject"));
     
-    
+    suite.addTest(new MNodeServiceTest("testCreateAndUpdateXMLWithUnmatchingEncoding"));
     return suite;
     
   }
@@ -1283,5 +1287,125 @@ public class MNodeServiceTest extends D1NodeServiceTest {
 		}
 	}
 	
+	/**
+	 * Test the extra "delete information" was added to the NotFoundException
+	 * if the object was delete in the following methods:
+	 * MN.get
+     * MN.getSystemmetadata
+     * MN.describe
+     * MN.getChecksum
+     * MN.getRelica
+	 */
+	public void testReadDeletedObject() {
+	    printTestHeader("testDelete");
+
+	    try {
+	      Session session = getTestSession();
+	      Identifier guid = new Identifier();
+	      guid.setValue("testDelete." + System.currentTimeMillis());
+	      InputStream object = new ByteArrayInputStream("test".getBytes("UTF-8"));
+	      SystemMetadata sysmeta = createSystemMetadata(guid, session.getSubject(), object);
+	      Identifier pid = MNodeService.getInstance(request).create(session, guid, object, sysmeta);
+	      Thread.sleep(3000);
+	      // use MN admin to delete
+	      session = getMNSession();
+	      Identifier deletedPid = MNodeService.getInstance(request).delete(session, pid);
+	      System.out.println("after deleting");
+	      assertEquals(pid.getValue(), deletedPid.getValue());
+	      // check that we cannot get the object
+	      session = getTestSession();
+	      InputStream deletedObject = null;
+	      try {
+	          //System.out.println("before read ===============");
+	          deletedObject = MNodeService.getInstance(request).get(session, deletedPid);
+	          //System.out.println("after read ===============");
+	      } catch (NotFound nf) {
+	          assertTrue(nf.getMessage().contains("deleted"));
+	      }
+	      try {
+              //System.out.println("before read ===============");
+              SystemMetadata sysmeta2 = MNodeService.getInstance(request).getSystemMetadata(session, deletedPid);
+              //System.out.println("after read ===============");
+          } catch (NotFound nf) {
+              //System.out.println("the exception is "+nf.getMessage());
+              assertTrue(nf.getMessage().contains("deleted"));
+          }
+	      
+	      try {
+              //System.out.println("before read ===============");
+	          DescribeResponse describeResponse = MNodeService.getInstance(request).describe(session, pid);
+              //System.out.println("after read ===============");
+          } catch (NotFound nf) {
+              //System.out.println("the exception is "+nf.getMessage());
+              assertTrue(nf.getMessage().contains("deleted"));
+          }
+	      
+	      try {
+              //System.out.println("before read ===============");
+	          Checksum checksum = MNodeService.getInstance(request).getChecksum(session, pid, "MD5");
+              //System.out.println("after read ===============");
+          } catch (NotFound nf) {
+              //System.out.println("the exception 3 is "+nf.getMessage());
+              assertTrue(nf.getMessage().contains("deleted"));
+          }
+	      
+	      try {
+              //System.out.println("before read ===============");
+	          boolean isAuthorized = 
+	                  MNodeService.getInstance(request).isAuthorized(session, pid, Permission.READ);
+              //System.out.println("after read ===============");
+          } catch (NotFound nf) {
+              System.out.println("the exception 4 is "+nf.getMessage());
+              assertTrue(nf.getMessage().contains("deleted"));
+          }
+	      
+	      assertNull(deletedObject);
+	      
+	    } catch (UnsupportedEncodingException e) {
+	      e.printStackTrace();
+	      
+	    } catch (Exception e) {
+	      e.printStackTrace();
+	      fail("Unexpected error: " + e.getMessage());
+
+	    } 
+	}
+	
+	/**
+	 * Test to create and update a metadata which xml declaration is ASCII, but actually
+	 * has some special charaters. The saved document should has the same bytes as the origianl.
+	 */
+	public void testCreateAndUpdateXMLWithUnmatchingEncoding() throws Exception {
+	      String algorithm = "md5";
+	      Session session = getTestSession();
+	      Identifier guid = new Identifier();
+	      guid.setValue("testCreateAndUpdate." + System.currentTimeMillis());
+	      InputStream object = new ByteArrayInputStream(FileUtils.readFileToByteArray(new File(unmatchingEncodingFilePath)));
+	      Checksum orgChecksum = ChecksumUtil.checksum(object, algorithm);
+	      //System.out.println("the original checksum is "+orgChecksum.getValue());
+	      SystemMetadata sysmeta = createSystemMetadata(guid, session.getSubject(), object);
+	      Identifier pid = 
+	        MNodeService.getInstance(request).create(session, guid, object, sysmeta);
+	      InputStream readResult = MNodeService.getInstance(request).get(session, pid);
+	      byte[] readBytes = IOUtils.toByteArray(readResult);
+	      Checksum checksum1 = ChecksumUtil.checksum(readBytes, algorithm);
+	      //System.out.println("the read checksum1 is "+checksum1.getValue());
+	      assertEquals(orgChecksum.getValue(), checksum1.getValue());
+	      
+	      Identifier newPid = new Identifier();
+          newPid.setValue("testCreateAndUpdate." + (System.currentTimeMillis() + 1)); // ensure it is different from original
+	      SystemMetadata newSysMeta = createSystemMetadata(newPid, session.getSubject(), object);
+	            
+	      // do the update
+	      Identifier updatedPid = 
+	        MNodeService.getInstance(request).update(session, pid, object, newPid, newSysMeta);
+	      InputStream readResult2 = MNodeService.getInstance(request).get(session, updatedPid);
+	      byte[] readBytes2 = IOUtils.toByteArray(readResult2);
+	      Checksum checksum2 = ChecksumUtil.checksum(readBytes2, algorithm);
+	      assertEquals(orgChecksum.getValue(), checksum2.getValue());
+	      //System.out.println("the read checksum2 is "+checksum2.getValue());
+
+	      
+	}
   
 }

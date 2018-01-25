@@ -4,14 +4,14 @@
 	<groupId>edu.ucsb.nceas.metacat.index</groupId>
 	<artifactId>metacat-index</artifactId>
 	<packaging>war</packaging>
-	<version>2.4.1</version>
+	<version>2.4.2</version>
 	<name>metacat-index</name>
 	<url>http://maven.apache.org</url>
 
 	<repositories>
 		<repository>
 			<id>dataone.org</id>
-			<url>http://dev-testing.dataone.org/maven</url>
+			<url>http://maven.dataone.org</url>
 			<releases>
 				<enabled>true</enabled>
 			</releases>
@@ -32,18 +32,8 @@
 		<dependency>
 			<groupId>edu.ucsb.nceas.metacat.common</groupId>
 			<artifactId>metacat-common</artifactId>
-			<version>2.4.1</version>
+			<version>2.4.2</version>
 			<type>jar</type>
-			<exclusions>
-				<exclusion>
-					<groupId>org.apache.httpcomponents</groupId>
-					<artifactId>httpclient</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>org.apache.httpcomponents</groupId>
-					<artifactId>httpmime</artifactId>
-				</exclusion>
-			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>javax.servlet</groupId>
@@ -55,7 +45,7 @@
 		 <dependency>
         <groupId>org.dataone</groupId>
         <artifactId>d1_cn_index_processor</artifactId>
-        <version>1.2.0</version>
+        <version>1.4.2</version>
         <type>jar</type>
         <exclusions>
                 <exclusion>
@@ -87,6 +77,16 @@
 			<groupId>org.apache.jena</groupId>
 			<artifactId>jena-tdb</artifactId>
 			<version>1.0.0</version>
+			<exclusions>
+                <exclusion>
+                    <groupId>org.apache.httpcomponents</groupId>
+                    <artifactId>httpclient</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.httpcomponents</groupId>
+                    <artifactId>httpcore</artifactId>
+                </exclusion>
+            </exclusions>
 		</dependency>
 		
 	</dependencies>
