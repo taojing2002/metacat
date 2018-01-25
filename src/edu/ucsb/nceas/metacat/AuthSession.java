@@ -96,15 +96,19 @@ public class AuthSession {
 				// hence groups[] is generated from groupsWithDescription[][]
 				String[][] groupsWithDescription = authService.getGroups(username,
 						password, username);
-				String groups[] = new String[groupsWithDescription.length];
+				String groups[] = null;
+				if(groupsWithDescription != null) {
+				    groups = new String[groupsWithDescription.length];
 
-				for (int i = 0; i < groupsWithDescription.length; i++) {
-					groups[i] = groupsWithDescription[i][0];
+	                for (int i = 0; i < groupsWithDescription.length; i++) {
+	                    groups[i] = groupsWithDescription[i][0];
+	                }
+
 				}
-
+				
 				if (groups == null) {
-					groups = new String[0];
-				}
+                    groups = new String[0];
+                }
 
 				String[] userInfo = authService.getUserInfo(username, password);
 
@@ -220,7 +224,7 @@ public class AuthSession {
 			String username, String[] groups, String userInfo[]) {
 		StringBuffer out = new StringBuffer();
 
-		out.append("<?xml version=\"1.0\"?>\n");
+		out.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
 		out.append("<" + tag + ">");
 		out.append("\n  <message>" + message + "</message>\n");
 		if (sessionId != null) {

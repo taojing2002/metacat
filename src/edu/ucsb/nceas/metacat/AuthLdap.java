@@ -280,15 +280,47 @@ public class AuthLdap implements AuthInterface {
 			
 			try {
 				authenticated = authenticateTLS(env, userDN, password);
+			} catch (AuthenticationException ee) {
+			    logMetacat.info("AuthLdap.ldapAuthenticate - failed to login : "+ee.getMessage());
+			    String aliasedDn = null;
+			    try {
+			        aliasedDn = getAliasedDnTLS(userDN, env);
+			        if(aliasedDn != null) {
+			            logMetacat.warn("AuthLdap.ldapAuthenticate - an aliased object " + aliasedDn + " was found for the DN "+userDN+". We will try to authenticate this new DN "+aliasedDn+".");
+			            authenticated = authenticateTLS(env, aliasedDn, password);
+			        }
+			    } catch (NamingException e) {
+			        logMetacat.error("AuthLdap.ldapAuthenticate - NamingException "+e.getMessage()+" happend when the ldap server authenticated the aliased object "+aliasedDn);
+			    } catch (IOException e) {
+			        logMetacat.error("AuthLdap.ldapAuthenticate - IOException "+e.getMessage()+" happend when the ldap server authenticated the aliased object "+aliasedDn);
+			    } catch (AuthTLSException e) {
+			        logMetacat.error("AuthLdap.ldapAuthenticate - AuthTLSException "+e.getMessage()+" happend when the ldap server authenticated the aliased object "+aliasedDn);
+			    }
 			} catch (AuthTLSException ate) {
 				logMetacat.info("AuthLdap.ldapAuthenticate - error while negotiating TLS: "
 						+ ate.getMessage());
-
 				if (secureConnectionOnly) {
 					return authenticated;
-
 				} else {
-					authenticated = authenticateNonTLS(env, userDN, password);
+				    try {
+                        authenticated = authenticateNonTLS(env, userDN, password);
+                    } catch (AuthenticationException ae) {
+                        logMetacat.warn("Authentication exception for (nonTLS): " + ae.getMessage());
+                        String aliasedDn = null;
+                        try {
+                            aliasedDn = getAliasedDnNonTLS(userDN, env);
+                            if(aliasedDn != null) {
+                                logMetacat.warn("AuthLdap.ldapAuthenticate(NonTLS) - an aliased object " + aliasedDn + " was found for the DN "+userDN+". We will try to authenticate this new DN "+aliasedDn+" again.");
+                                authenticated = authenticateNonTLS(env, aliasedDn, password);
+                            }
+                            
+                        } catch (NamingException e) {
+                            logMetacat.error("AuthLdap.ldapAuthenticate(NonTLS) - NamingException "+e.getMessage()+" happend when the ldap server authenticated the aliased object "+aliasedDn);
+                        } catch (IOException e) {
+                            logMetacat.error("AuthLdap.ldapAuthenticate(NonTLS) - IOException "+e.getMessage()+" happend when the ldap server authenticated the aliased object "+aliasedDn);
+                        } 
+                    }
+
 				}
 			}
 		} catch (AuthenticationException ae) {
@@ -304,8 +336,58 @@ public class AuthLdap implements AuthInterface {
 		return authenticated;
 	}
 	
+	
+	/*
+	 * Get the aliased dn through a TLS connection. The null will be returned if there is no real name associated with the alias
+	 */
+	private String getAliasedDnTLS(String alias, Hashtable<String, String> env) throws NamingException, IOException {
+	    boolean useTLS = true;
+	    return getAliasedDn(alias, env, useTLS);
+	}
+	
+	/*
+     * Get the aliased dn through a non-TLS connection. The null will be returned if there is no real name associated with the alias
+     */
+    private String getAliasedDnNonTLS(String alias, Hashtable<String, String> env) throws NamingException, IOException {
+        boolean useTLS = false;
+        return getAliasedDn(alias, env, useTLS);
+    }
+	
+	/*
+	 * Get the aliasedDN (the real DN) for a specified an alias name
+	 */
+	private String getAliasedDn(String alias, Hashtable<String, String> env, boolean useTLS) throws NamingException, IOException  {
+	    String aliasedDn = null;
+        LdapContext sctx = new InitialLdapContext(env, null);
+        StartTlsResponse tls = null;
+        if(useTLS) {
+            tls = (StartTlsResponse) sctx.extendedOperation(new StartTlsRequest());
+            // Open a TLS connection (over the existing LDAP association) and get details
+            // of the negotiated TLS session: cipher suite, peer certificate, etc.
+            SSLSession session = tls.negotiate();
+        }
+        SearchControls ctls = new SearchControls();
+        ctls.setSearchScope(SearchControls.SUBTREE_SCOPE);
+        String filter = "(objectClass=*)";
+        NamingEnumeration answer  = sctx.search(alias, filter, ctls);
+        while(answer.hasMore()) {
+            SearchResult result = (SearchResult) answer.next();
+            if(!result.isRelative()) {
+                //if is not relative, this will be alias.
+                aliasedDn = result.getNameInNamespace();
+                break;
+            }
+        }
+        if(useTLS && tls != null) {
+            tls.close();
+        }
+        sctx.close();
+        return aliasedDn;
+	    
+	}
+	
 	private boolean authenticateTLS(Hashtable<String, String> env, String userDN, String password)
-			throws AuthTLSException{	
+			throws AuthTLSException, AuthenticationException{	
 		logMetacat.info("AuthLdap.authenticateTLS - Trying to authenticate with TLS");
 		try {
 			LdapContext ctx = null;
@@ -326,6 +408,10 @@ public class AuthLdap implements AuthInterface {
 			stopTime = System.currentTimeMillis();
 			logMetacat.info("AuthLdap.authenticateTLS - Connection time thru "
 					+ ldapsUrl + " was: " + (stopTime - startTime) / 1000 + " seconds.");
+		} catch (AuthenticationException ae) {
+            logMetacat.warn("AuthLdap.authenticateTLS - Authentication exception: " + ae.getMessage());
+            throw ae;
+            
 		} catch (NamingException ne) {
 			throw new AuthTLSException("AuthLdap.authenticateTLS - Naming error when athenticating via TLS: " + ne.getMessage());
 		} catch (IOException ioe) {
@@ -548,6 +634,17 @@ public class AuthLdap implements AuthInterface {
 		env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
 		env.put(Context.REFERRAL, referral);
 		env.put(Context.PROVIDER_URL, ldapUrl);
+		String realName = null;
+		try {
+		    realName = getAliasedDnNonTLS(user,env);
+		} catch(Exception e) {
+		    logMetacat.warn("AuthLdap.getUserInfo - can't get the alias name for the user "+user+" since "+e.getMessage());
+		}
+		
+		if(realName != null) {
+		    //the the user is an alias name. we need to use the the real name
+		    user = realName;
+		}
 
 		try {
 
@@ -565,13 +662,13 @@ public class AuthLdap implements AuthInterface {
 
 			String filter = null;
 
-			if (user.indexOf("o=") > 0) {
+			/*if (user.indexOf("o=") > 0) {
 				String tempStr = user.substring(user.indexOf("o="));
 				filter = "(&(" + user.substring(0, user.indexOf(",")) + ")("
 						+ tempStr.substring(0, tempStr.indexOf(",")) + "))";
 			} else {
 				filter = "(&(" + user.substring(0, user.indexOf(",")) + "))";
-			}
+			}*/
 			filter = "(&(" + user.substring(0, user.indexOf(",")) + "))";
 
 			NamingEnumeration namingEnum = ctx.search(user, filter, ctls);
@@ -728,7 +825,17 @@ public class AuthLdap implements AuthInterface {
 		env.put(Context.REFERRAL, "throw");
 		env.put(Context.PROVIDER_URL, ldapUrl);
 		env.put("com.sun.jndi.ldap.connect.timeout", ldapConnectTimeLimit);
-
+		String realName = null;
+		try {
+            realName = getAliasedDnNonTLS(foruser,env);
+        } catch(Exception e) {
+            logMetacat.warn("AuthLdap.getGroups - can't get the alias name for the user "+user+" since "+e.getMessage());
+        }
+        
+        if(realName != null) {
+            //the the user is an alias name. we need to use the the real name
+            foruser = realName;
+        }
 		// Iterate through the referrals, handling NamingExceptions in the
 		// outer catch statement, ReferralExceptions in the inner catch
 		// statement
@@ -1243,7 +1350,7 @@ public class AuthLdap implements AuthInterface {
 	/**
 	 * Method for getting index of user DN in User info array
 	 */
-	int searchUser(String user, String userGroup[][]) {
+	public static int searchUser(String user, String userGroup[][]) {
 		for (int j = 0; j < userGroup.length; j++) {
 			if (user.compareTo(userGroup[j][0]) == 0) {
 				return j;

@@ -136,6 +136,8 @@ public class Eml200SAXHandler extends DBSAXHandler implements
     // we find an 'access' element inside an 'additionalMetadata' element.  Set back
     // to false in endElement
     private boolean processOtherAccess = false;
+    
+    private Vector<String> guidsToSync;
 
     // if we are inside an 'access' element, we use this object to hold the 
     // current access info
@@ -331,10 +333,11 @@ public class Eml200SAXHandler extends DBSAXHandler implements
      */
     public Eml200SAXHandler(DBConnection conn, String action, String docid,
             String revision, String user, String[] groups, String pub,
-            int serverCode, Date createDate, Date updateDate, boolean writeAccessRules) throws SAXException
+            int serverCode, Date createDate, Date updateDate, boolean writeAccessRules, Vector<String> guidsToSync) throws SAXException
     {
         super(conn, action, docid, revision, user, groups, pub, 
                 serverCode, createDate, updateDate, writeAccessRules);
+		this.guidsToSync = guidsToSync;
         // Get the unchangable subtrees (user doesn't have write permission)
         try
         {
@@ -1940,7 +1943,7 @@ public class Eml200SAXHandler extends DBSAXHandler implements
    }
 
 
-  /* The method to write top level access rule into db. The old rules will be
+  /* The method to write additional access rule into db. The old rules will be
    * deleted
    * If no describedId in the access object, this access rules will be ingorned
    */
@@ -1997,6 +2000,19 @@ public class Eml200SAXHandler extends DBSAXHandler implements
                                    "xml_access table for"+ inlineFileName);
              writeGivenAccessRuleIntoDB(permOrder, accessRule,
                                         inlineFileName, subreeid);
+             // Save guid of data object for syncing of access policy with CN after parsing
+             // is successful (see DocumentImpl.write)
+             // look-up pid assuming docid
+             String dataGuid = inlineFileName;
+             try {
+	             String dataDocid = DocumentUtil.getDocIdFromAccessionNumber(inlineFileName);
+	             int dataRev = DocumentUtil.getRevisionFromAccessionNumber(inlineFileName);
+	             dataGuid = IdentifierManager.getInstance().getGUID(dataDocid, dataRev);
+             } catch (McdbDocNotFoundException e) {
+            	 // log the warning
+            	 logMetacat.warn("No pid found for [assumed] data docid: " + inlineFileName);
+             }
+ 			 guidsToSync.add(dataGuid);
            }
            else if (onlineURLDistributionIdList.containsKey(subreeid))
            {
@@ -2017,6 +2033,19 @@ public class Eml200SAXHandler extends DBSAXHandler implements
                                           dataFileName, null);
                logMetacat.info("Write online data access into " +
                                    "xml_access table for " + dataFileName);
+               // Save guid of data object for syncing of access policy with CN after parsing
+               // is successful (see DocumentImpl.write)
+               // look-up pid assuming docid
+               String dataGuid = dataFileName;
+               try {
+  	             String dataDocid = DocumentUtil.getDocIdFromAccessionNumber(dataFileName);
+  	             int dataRev = DocumentUtil.getRevisionFromAccessionNumber(dataFileName);
+  	             dataGuid = IdentifierManager.getInstance().getGUID(dataDocid, dataRev);
+               } catch (McdbDocNotFoundException e) {
+              	 // log the warning
+              	 logMetacat.warn("No pid found for [assumed] data docid: " + dataFileName);
+               }
+               guidsToSync.add(dataGuid);
                // put the id into a hashtalbe. So when we run wirtetop level
                // access, those id will be ignored because they already has
                // additional access rules

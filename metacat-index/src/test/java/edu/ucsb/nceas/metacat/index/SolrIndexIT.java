@@ -1,20 +1,21 @@
 package edu.ucsb.nceas.metacat.index;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import edu.ucsb.nceas.metacat.common.SolrServerFactory;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringWriter;
 import java.io.Writer;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.SolrServerException;
-import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.core.CoreContainer;
@@ -39,8 +40,11 @@ public class SolrIndexIT  {
     private static final String id = "urn:uuid:606a19dd-b531-4bf4-b5a5-6d06c3d39098";
     private static final String newId = "urn:uuid:606a19dd-b531-4bf4-b5a5-6d06c3d39099";
     
-	private SolrIndex solrIndex = null;
+	private String annotation_id = "http://doi.org/annotation.1.1";
+	private static final String ANNOTATION_SYSTEM_META_FILE_PATH = "src/test/resources/annotation-system-meta-example.xml";
+	private static final String ANNOTATION_FILE_PATH = "src/test/resources/annotation-example.rdf";;
     
+	private SolrIndex solrIndex = null;
     
     @Before
     public void setUp() throws Exception {
@@ -128,13 +132,101 @@ public class SolrIndexIT  {
     }
     
     
-    /*
-     * Do query
+    /**
+     * Test building index for dynamic fields.
+     */
+    @Test
+    public void testDynamicFields() throws Exception {
+    	
+       SystemMetadata systemMetadata = TypeMarshaller.unmarshalTypeFromFile(SystemMetadata.class, SYSTEMMETAFILEPATH);
+       InputStream emlInputStream = new FileInputStream(new File(EMLFILEPATH)); 
+       Identifier pid = new Identifier();
+       pid.setValue(id);
+       solrIndex.update(pid, systemMetadata, emlInputStream);
+       String result = doQuery(solrIndex.getSolrServer());
+       List<String> ids = solrIndex.getSolrIds();
+       boolean foundId = false;
+       for(String identifiers :ids) {
+           if (id.equals(identifiers)) {
+               foundId = true;
+           }
+       }
+       assertTrue(foundId);
+       assertTrue(result.contains("version1"));
+       
+       // augment with the dynamic field
+       String fieldName = "test_count_i";
+       Map<String, List<Object>> fields = new HashMap<String, List<Object>>();
+       List<Object> values = new ArrayList<Object>();
+       values.add(6);
+       fields.put(fieldName, values);
+       solrIndex.insertFields(pid, fields);
+       result = doQuery(solrIndex.getSolrServer(), "&fq=" + fieldName + ":[0 TO 5]");
+       assertFalse(result.contains(id));
+       result = doQuery(solrIndex.getSolrServer(), "&fq=" + fieldName + ":[6 TO 6]");
+       assertTrue(result.contains(id));
+       
+       // now update the value
+       values.clear();
+       values.add(7);
+       fields.put(fieldName, values);
+       solrIndex.insertFields(pid, fields);
+       result = doQuery(solrIndex.getSolrServer(), "&fq=" + fieldName + ":[7 TO 7]");
+       assertTrue(result.contains(id));
+       
+    }
+    
+    /**
+     * Test building index for annotation.
+     */
+    @Test
+    public void testAnnotation() throws Exception {
+    	
+       SystemMetadata systemMetadata = TypeMarshaller.unmarshalTypeFromFile(SystemMetadata.class, SYSTEMMETAFILEPATH);
+       InputStream emlInputStream = new FileInputStream(new File(EMLFILEPATH)); 
+       Identifier pid = new Identifier();
+       pid.setValue(id);
+       solrIndex.update(pid, systemMetadata, emlInputStream);
+       String result = doQuery(solrIndex.getSolrServer());
+       List<String> ids = solrIndex.getSolrIds();
+       boolean foundId = false;
+       for(String identifiers :ids) {
+           if (id.equals(identifiers)) {
+               foundId = true;
+           }
+       }
+       assertTrue(foundId);
+       assertTrue(result.contains("version1"));
+       
+       // augment with the dynamic field
+       SystemMetadata annotationSystemMetadata = TypeMarshaller.unmarshalTypeFromFile(SystemMetadata.class, ANNOTATION_SYSTEM_META_FILE_PATH);
+       InputStream annotationInputStream = new FileInputStream(new File(ANNOTATION_FILE_PATH)); 
+       Identifier annotationPid = new Identifier();
+       annotationPid.setValue(annotation_id);
+       solrIndex.update(annotationPid, annotationSystemMetadata, annotationInputStream);
+       String annotationResult = doQuery(solrIndex.getSolrServer());
+       assertTrue(annotationResult.contains("measurement_sm"));
+       
+    }
+    
+    /**
+     * Do query - with no additional params
      */
     public static String doQuery(SolrServer server)
                     throws SolrServerException {
+    	return doQuery(server, null);
+    }
+    
+    /**
+     * Do query, allowing additional parameters
+     */
+    public static String doQuery(SolrServer server, String moreParams)
+                    throws SolrServerException {
                 StringBuffer request = new StringBuffer();
                 request.append("q=" + "*:*");
+                if (moreParams != null) {
+                    request.append(moreParams);
+                }
                 SolrParams solrParams = SolrRequestParsers.parseQueryString(request
                         .toString());
                 QueryResponse reponse = server.query(solrParams);
@@ -146,7 +238,7 @@ public class SolrIndexIT  {
                 return result;
     }
     
-    /*
+    /**
      * Transform the query response to the xml format.
      */
     private static String toXML(SolrParams request, QueryResponse response) {

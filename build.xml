@@ -72,14 +72,14 @@
 	                <arg value = "@{dest}" />
 	            </args>
 	        </git>
-	        <git command = "pull" dir = "@{dest}" >
+	        <git command = "checkout" dir = "@{dest}">
 	        	<args>
-	                <arg value = "@{repository}" />
 	                <arg value = "@{refname}" />
 	            </args>
 	        </git>
-	        <git command = "checkout" dir = "@{dest}">
+	    	<git command = "pull" dir = "@{dest}" >
 	        	<args>
+	                <arg value = "@{repository}" />
 	                <arg value = "@{refname}" />
 	            </args>
 	        </git>
@@ -416,7 +416,7 @@
 		<property name="metacatui.git.repository.url"
 					value="https://github.com/NCEAS/metacatui.git" />
 		<property name="metacatui.git.repository.refname"
-							value="METACATUI_1_4_1" />
+							value="METACATUI_1_4_6" />
 		<!--<property name="metacatui.git.repository.refname"
 									value="master" /> -->
 		<property name="metacatui.build.dir"
@@ -1192,6 +1192,7 @@
 		description="Uses the ant to run a class">
 		
 		<java classname="${classtorun}" fork="true">
+			<arg line="${args}" />
 			<jvmarg value="-Dfile.encoding=UTF-8"/>
 			<classpath>
 				<path refid="test.classpath" />
@@ -1397,7 +1398,6 @@
 			<fileset dir="${ecogrid-dir}"/>
 			<fileset dir="lib/style/common/emlb6toeml2"/>
 			<fileset dir="lib/dtd"/>
-			<fileset dir="lib/schema"/>
 			<fileset dir="${utilitiesdir}"/>
 			<fileset dir="${libdir.mvn}"/>
 		</delete>

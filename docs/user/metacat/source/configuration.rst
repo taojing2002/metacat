@@ -45,9 +45,11 @@ does not know where this external directory is, Metacat uses a discovery
 algorithm to locate it. If Metacat cannot identify a backup directory, you will 
 see the Backup Directory Configuration screen.
 
-NOTE: If the metacat.properties file has many custom settings, it should be manually 
-backed up before any Metacat upgrade as deploying a new Metacat war file will overwrite
-the existing file.
+.. Note:: 
+  
+  If the metacat.properties file has many custom settings, it should be manually 
+  backed up before any Metacat upgrade as deploying a new Metacat war file will overwrite
+  the existing file.
 
 .. figure:: images/screenshots/image011.png
    :align: center
@@ -62,25 +64,56 @@ reach the Authentication Configuration page from a running Metacat by typing::
   
   http://<your_context_url>/admin
 
-Metacat uses LDAP as its primary authentication mechanism, but you can define 
-your own authentication mechanism by creating a Java class that implements 
-``AuthInterface``. Required configuration values are: Authentication Class, 
-Authentication URL, Authentication Secure URL, and Metacat Administrators. 
+Metacat uses either an internal password file or LDAP as its authentication mechanism.
+You can choose the authentication mechanism by selecting either AuthFile or AuthLdap class.
+We will only allow trusted partners to access the NCEAS LDAP server to ensure the security of our user base.
+If you are not in the trusted partner list, you may choose the internal password file authentication 
+or set up your own LDAP server. You also can define your own authentication mechanism by creating a Java 
+class that implements ``AuthInterface``.
+
+Required configuration values for the password file authentication are:
+
+  ::
+   
+    Authentication Class
+    Metacat Administrators
+    Users Management URL
+    Password File Path.
+
+Required configuration values for LDAP authentication are:
+
+  ::
+   
+    Authentication Class
+    Metacat Administrators
+    Users Management URL
+    Authentication URL
+    Authentication Secure URL. 
+
+
 Make sure that your user account information is entered into the Metacat 
 Administrators field (e.g., uid=daigle,o=nceas,dc=ecoinformatics,dc=org). You 
-will not be allowed to continue with configuration if this is missing. 
+will not be allowed to continue with configuration if this is missing. Multiple 
+accounts can be entered, separated by the colon (:) character.
 
-NOTE: To create an LDAP account on the KNB LDAP server (specified as the 
-default LDAP server), go to http://knb.ecoinformatics.org and select the 
-"create a new user account" link.
+.. Note:: 
+  
+  To create an account on the password file, please see the section called :doc:`authinterface`.
+  To create an LDAP account on the KNB LDAP server (specified as the default LDAP server), 
+  go to https://identity.nceas.ucsb.edu and select the "create a new user account" link.
 
 If you make changes to the authentication settings, you must restart Tomcat to 
 put them into effect.
 
+.. figure:: images/screenshots/image071.png
+   :align: center
+
+   Configuring Password File Authentication Values.
+
 .. figure:: images/screenshots/image009.png
    :align: center
 
-   Configuring Authentication Values.
+   Configuring LDAP Authentication Values.
 
 Changing Authentication Configuration without Authentication
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -108,6 +141,7 @@ To edit the authentication configuration file:
     auth.administrators - a colon separated list of administrators 
     auth.url - the authentication server URL 
     auth.surl - the authentication secure server URL
+    auth.file.path  - the authentication password file path
 
 3. Save the ``metacat.properties`` file and start Tomcat.
 

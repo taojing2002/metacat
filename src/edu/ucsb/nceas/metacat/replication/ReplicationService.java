@@ -46,9 +46,12 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.Hashtable;
+import java.util.List;
 import java.util.Timer;
 import java.util.Vector;
 
@@ -62,6 +65,7 @@ import org.apache.http.conn.ssl.SSLSocketFactory;
 import org.apache.log4j.Logger;
 import org.dataone.client.RestClient;
 import org.dataone.client.auth.CertificateManager;
+import org.dataone.service.types.v1.Identifier;
 import org.dataone.service.types.v1.SystemMetadata;
 import org.dataone.service.util.DateTimeMarshaller;
 import org.dataone.service.util.TypeMarshaller;
@@ -86,7 +90,9 @@ import edu.ucsb.nceas.metacat.client.InsufficientKarmaException;
 import edu.ucsb.nceas.metacat.database.DBConnection;
 import edu.ucsb.nceas.metacat.database.DBConnectionPool;
 import edu.ucsb.nceas.metacat.database.DatabaseService;
+import edu.ucsb.nceas.metacat.dataone.SyncAccessPolicy;
 import edu.ucsb.nceas.metacat.dataone.hazelcast.HazelcastService;
+import edu.ucsb.nceas.metacat.index.MetacatSolrIndex;
 import edu.ucsb.nceas.metacat.properties.PropertyService;
 import edu.ucsb.nceas.metacat.shared.BaseService;
 import edu.ucsb.nceas.metacat.shared.HandlerException;
@@ -414,6 +420,35 @@ public class ReplicationService extends BaseService {
 				rir.upgrade();
 				out.write("Removed invalid replicas for server " + serverid);
 				
+			} else if (subaction.equals("syncaccesspolicy")) {
+				SyncAccessPolicy syncAP = new SyncAccessPolicy();
+				response.setContentType("text/html");
+				out = response.getWriter();
+				if (params.containsKey("pid")) {
+					String[] pids = params.get("pid");
+					logMetacat.debug("Attempting to sync access policies for pids: " + pids);
+					ArrayList<String> pidsToSync = new ArrayList<String>(Arrays.asList(pids));
+					try {
+						List<Identifier> syncedPids = syncAP.sync(pidsToSync);
+						out.write("<html><body>Syncing access policies has completed for " + syncedPids.size() + " pids.</body></html>");
+					} catch (Exception e) {
+						logMetacat.error("Error syncing all access polies: "
+								+ e.getMessage());
+						response.setContentType("text/html");
+						out = response.getWriter();
+						out.write("<html><body>Error syncing access policies</body></html>");
+					}
+				} else {
+					logMetacat.debug("Request to sync all access policies has been submitted.");
+					try {
+						syncAP.syncAll();
+						out.write("<html><body>Request to sync all access policies has been submitted.</body></html>");
+					} catch (Exception e) {
+						logMetacat.error("Error syncing access policies: "
+								+ e.getMessage());
+						out.write("<html><body>Error syncing access policies: " + e.getMessage() + " </body></html>");
+					}
+				}
 			} else {
 			
 				out.write("<error>Unkonwn subaction</error>");
@@ -439,6 +474,7 @@ public class ReplicationService extends BaseService {
 				out.write("<td><b>ORE Maps</b></td>");
 				out.write("<td><b>Invalid Replicas</b></td>");
 			}
+			out.write("<td><b>Sync Access Policies</b></td>");
 			out.write("</tr>");
 
 			pstmt = dbConn.prepareStatement("SELECT serverid, server, last_checked, replicate, datareplicate, hub FROM xml_replication");
@@ -484,6 +520,15 @@ public class ReplicationService extends BaseService {
 					out.write("<input type='submit' value='Remove Invalid Replicas' " + disabled + " />");
 					out.write("</form></td>");
 				}
+				// for syncing access policies (MN -> CN)
+				out.write("<td><form action='" + request.getContextPath() + "/admin'>");
+				out.write("<input name='serverid' type='hidden' value='" + serverId + "'/>");
+				out.write("<input name='configureType' type='hidden' value='replication'/>");
+				out.write("<input name='action' type='hidden' value='servercontrol'/>");
+				out.write("<input name='subaction' type='hidden' value='syncaccesspolicy'/>");
+				out.write("<input type='submit' value='Sync access policies'/>");
+				out.write("</form></td>");
+				
 				out.write("</tr>");
 
 				tablehasrows = rs.next();
@@ -591,7 +636,7 @@ public class ReplicationService extends BaseService {
 				// save the system metadata
 				HazelcastService.getInstance().getSystemMetadataMap().put(sysMeta.getIdentifier(), sysMeta);
 				// submit for indexing
-                HazelcastService.getInstance().getIndexQueue().add(sysMeta);
+                MetacatSolrIndex.getInstance().submit(sysMeta.getIdentifier(), sysMeta, null);
 			}
       
 			// dates
@@ -888,7 +933,7 @@ public class ReplicationService extends BaseService {
 	      	  // save the system metadata
 	      	  HazelcastService.getInstance().getSystemMetadataMap().put(sysMeta.getIdentifier(), sysMeta);
 	      	  // submit for indexing
-              HazelcastService.getInstance().getIndexQueue().add(sysMeta);
+              MetacatSolrIndex.getInstance().submit(sysMeta.getIdentifier(), sysMeta, null);
 	        }
 	        
 	        // process the access control
@@ -1160,7 +1205,7 @@ public class ReplicationService extends BaseService {
 							new ByteArrayInputStream(systemMetadataXML.getBytes("UTF-8")));
 				HazelcastService.getInstance().getSystemMetadataMap().put(sysMeta.getIdentifier(), sysMeta);
 				// submit for indexing
-                HazelcastService.getInstance().getIndexQueue().add(sysMeta);
+                MetacatSolrIndex.getInstance().submit(sysMeta.getIdentifier(), sysMeta, null);
 			}
       
 			logReplication.info("ReplicationService.handleForceReplicateSystemMetadataRequest - processed guid: " + guid);

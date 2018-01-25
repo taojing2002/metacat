@@ -324,19 +324,21 @@ file are marked. All others are managed with the properties configuration utilit
 
 Authorization and Authentication Properties
 
+.. _Authentication details: ./authinterface.html
+
 +-----------------------------------+-------------------------------------------------------------------------------+-----------------------------------------------+
 | Property                          | Description                                                                   | Example                                       |
 +===================================+===============================================================================+===============================================+
 | .. _auth-class:                   |                                                                               |                                               |
 |                                   |                                                                               |                                               |
-| auth.class                        | The class used for user authentication. Currently, only the AuthLdap          | edu.ucsb.nceas.metacat.AuthLdap               |
-|                                   | class is included in the Metacat distribution.                                |                                               |
+| auth.class                        | The class used for user authentication. Currently, both the AuthFile and      | edu.ucsb.nceas.metacat.AuthLdap               |
+|                                   | AuthLdap classes are included in the Metacat distribution.                    |                                               |
 |                                   | Note: If you implement another authentication strategy by implementing a Java |                                               |
 |                                   | class that extends the AuthInterface interface and rebuilding Metacat,        |                                               |
 |                                   | change this property to the fully qualified class name of your custom         |                                               |
 |                                   | authentication mechanism.                                                     |                                               |
 |                                   |                                                                               |                                               |
-|                                   | Default Value: edu.ucsb.nceas.metacat.AuthLdap                                |                                               |
+|                                   | Default Value: edu.ucsb.nceas.metacat.authentication.AuthFile                 |                                               |
 +-----------------------------------+-------------------------------------------------------------------------------+-----------------------------------------------+
 | auth.timeoutMinutes*              | The number of minutes that a user will stay logged in to Metacat              | 180                                           |
 |                                   | without any activity.                                                         |                                               |
@@ -349,6 +351,21 @@ Authorization and Authentication Properties
 |                                   | Metacat privileges. At least one user or group must be entered when           | cn=yourgroup,o=NCEAS,dc=ecoinformatics,dc=org |
 |                                   | Metacat is first installed and configured. All accounts must exist            |                                               |
 |                                   | in LDAP in order to continue with the configuration.                          |                                               |
++-----------------------------------+-------------------------------------------------------------------------------+-----------------------------------------------+
+| .. _auth-user-management-url:     |                                                                               |                                               |
+|                                   |                                                                               |                                               |
+| auth.userManagementUrl            | A web page provides the user management such as creating a new user and       | https://identity.nceas.ucsb.edu               |
+|                                   | changing password.                                                            |                                               |
++-----------------------------------+-------------------------------------------------------------------------------+-----------------------------------------------+
+| .. _auth-file-path:               |                                                                               |                                               |
+|                                   |                                                                               |                                               |
+| auth.file.path                    | The absolute path of the password file which stores the username/password     | /var/metacat/certs/password                   |
+|                                   | and users' information. This file is used for the file-based authentication   |                                               |
+|                                   | mechanism.                                                                    |                                               |
+|                                   |                                                                               |                                               |
+|                                   | Please see the `Authentication details`_ page for more information.           |                                               |
+|                                   |                                                                               |                                               |
+|                                   | Default Value: /var/metacat/certs/password                                    |                                               |
 +-----------------------------------+-------------------------------------------------------------------------------+-----------------------------------------------+
 | .. _auth-url:                     |                                                                               |                                               |
 |                                   |                                                                               |                                               |
