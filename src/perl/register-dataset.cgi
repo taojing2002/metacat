@@ -1365,6 +1365,8 @@ sub processFile {
 		debug( "Error receiving file " . cgi_error() );
 	}
 
+	debug( "Process file: " . $fileName );
+
 	# write file to disk, get SHA1 hash and size
 	my ( $outFile, $fileHash ) = writeFile($fileName);
 	debug( "processed file to temp directory:  $outFile" );
@@ -1383,7 +1385,10 @@ sub processFile {
 	# http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=313141
 	if ( !$contentType ) {
 		$contentType = 'text/plain';
-	}
+	} elsif ( $contentType =~ "application/vnd.ms-excel" && $fileName =~ /\.csv$/) {
+        debug("Reassigning content type (" . $contentType . ")to CSV for file: " . $fileName);
+        $contentType = 'text/csv';
+    }
 
 	my %dataInfo = (
 		'fileName'    => $outFile,
@@ -4936,6 +4941,41 @@ sub toConfirmData {
 	$$templateVars{'identifierCount'} = $identifierCount - 1;
 	
 	$$templateVars{'title'}          = normalizeCD($FORM::title);
+	$$templateVars{'origNamefirst0'} = normalizeCD($FORM::origNamefirst0);
+	$$templateVars{'origNamelast0'}  = normalizeCD($FORM::origNamelast0);
+	$$templateVars{'origNameOrg'}    = normalizeCD($FORM::origNameOrg);
+	$$templateVars{'origDelivery'}   = normalizeCD($FORM::origDelivery);
+	$$templateVars{'origCity'}       = normalizeCD($FORM::origCity);
+
+	if ( $FORM::origState =~ /select state/i ) {
+		$$templateVars{'origState'} = "";
+	}
+	else {
+		$$templateVars{'origState'} = $FORM::origState;
+	}
+	$$templateVars{'origStateOther'} = normalizeCD($FORM::origStateOther);
+	$$templateVars{'origZIP'}        = normalizeCD($FORM::origZIP);
+	$$templateVars{'origCountry'}    = normalizeCD($FORM::origCountry);
+	$$templateVars{'origPhone'}      = normalizeCD($FORM::origPhone);
+	$$templateVars{'origFAX'}        = normalizeCD($FORM::origFAX);
+	$$templateVars{'origEmail'}      = normalizeCD($FORM::origEmail);
+	$$templateVars{'useOrigAddress'} = normalizeCD($FORM::useOrigAddress);
+	if ( $FORM::useOrigAddress eq "on" ) {
+		$$templateVars{'origNamefirstContact'} =
+		  normalizeCD($FORM::origNamefirst0);
+		$$templateVars{'origNamelastContact'} =
+		  normalizeCD($FORM::origNamelast0);
+		$$templateVars{'origNameOrgContact'} = normalizeCD($FORM::origNameOrg);
+		$$templateVars{'origDeliveryContact'} =
+		  normalizeCD($FORM::origDelivery);
+		$$templateVars{'origCityContact'} = normalizeCD($FORM::origCity);
+		if ( $FORM::origState =~ /select state/i ) {
+			$$templateVars{'origStateContact'} = "";
+		}
+	}
+	$$templateVars{'identifierCount'} = $identifierCount - 1;
+	
+	$$templateVars{'title'}          = normalizeCD($FORM::title);
 
 	# Handle multiple parties
 	my $partyIds = \@FORM::partyId;
@@ -5219,7 +5259,8 @@ sub copyFormToTemplateVars {
 			}
 		}
 	}
-		
+	
+	
 	$$templateVars{'title'}          = $FORM::title;
 
 	if ( $FORM::useSiteCoord ne "" ) {

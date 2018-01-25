@@ -31,6 +31,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Vector;
@@ -977,7 +978,8 @@ public class IdentifierManager {
      *      If obsoletedBy is missing, we generally consider it a type 2 end except:
      *      there is another object in the chain (has the same series id) that obsoletes the missing object. 
      * 2. if only 1 candidate chain-end, return it as the HEAD
-     * 3. otherwise return the one in the chain with the latest dateUploaded value.
+     * 3. otherwise return the one in the chain with the latest dateUploaded value. However, we find that dateUpload doesn't refect the obsoletes information
+     * (espically on the cn), so we will check osoletes information as well. https://redmine.dataone.org/issues/7624
      * @param sid specified sid which should match.
      * @return the pid of the head version. The null will be returned if there is no pid found.
      * @throws SQLException 
@@ -986,12 +988,17 @@ public class IdentifierManager {
         Identifier pid = null;
         if(sid != null && sid.getValue() != null && !sid.getValue().trim().equals("")) {
             logMetacat.debug("getting pid of the head version for matching the sid: " + sid.getValue());
-            String sql = "select guid from systemMetadata where series_id = ? order by date_uploaded DESC";
+            String sql = "select guid, obsoleted_by, obsoletes from systemMetadata where series_id = ? order by date_uploaded DESC";
             DBConnection dbConn = null;
             int serialNumber = -1;
             PreparedStatement stmt = null;
-            int endsCount = 0;
+            PreparedStatement stmt2 = null;
+            ResultSet rs = null;
+            ResultSet result = null;
+            //int endsCount = 0;
             boolean hasError = false;
+            HashMap<String, String> obsoletesIdGuidMap = new HashMap<String, String>();//the key is an obsoletes id, the value is an guid
+            Vector<Identifier> endsList = new Vector<Identifier>();//the vector storing ends
             try {
                 // Get a database connection from the pool
                 dbConn = DBConnectionPool.getDBConnection("IdentifierManager.getHeadPID");
@@ -999,7 +1006,7 @@ public class IdentifierManager {
                 // Execute the insert statement
                 stmt = dbConn.prepareStatement(sql);
                 stmt.setString(1, sid.getValue());
-                ResultSet rs = stmt.executeQuery();
+                rs = stmt.executeQuery();
                 boolean hasNext = rs.next();
                 boolean first = true;
                 Identifier firstOne = new Identifier();//since the sql using the desc order, the first one has the latest upload date.
@@ -1007,34 +1014,60 @@ public class IdentifierManager {
                 {
                     while(hasNext) {
                         String guidStr = rs.getString(1);
+                        String obsoletedByStr = rs.getString(2);
+                        String obsoletesStr = rs.getString(3);
                         Identifier guid = new Identifier();
                         guid.setValue(guidStr);
+                        if(obsoletesStr != null && !obsoletesStr.trim().equals("")) {
+                            if(obsoletesIdGuidMap.containsKey(obsoletesStr) && !guidStr.equals(obsoletesIdGuidMap.get(obsoletesStr))) {
+                                logMetacat.error("Both id "+guidStr+" and id "+obsoletesIdGuidMap.get(obsoletesStr)+" obsoletes the id"+obsoletesStr+
+                                        ". It is illegal. So the head pid maybe is wrong.");
+                                hasError = true;
+                            } 
+                            logMetacat.debug("Put "+guidStr+"(a value) Obsoletes "+obsoletesStr+" (a key) into the vector.");
+                            obsoletesIdGuidMap.put(obsoletesStr, guidStr);
+                        }
                         if(first) {
                             firstOne = guid;
                             first =false;
                         }
-                        SystemMetadata sysmeta = HazelcastService.getInstance().getSystemMetadataMap().get(guid);
-                        if(sysmeta.getObsoletedBy() == null) {
+                        //SystemMetadata sysmeta = HazelcastService.getInstance().getSystemMetadataMap().get(guid);
+                        //if(sysmeta.getObsoletedBy() == null) {
+                        if(obsoletedByStr == null || obsoletedByStr.trim().equals("")) {
                             //type 1 end
                             logMetacat.debug(""+guidStr+" is a type 1 end for sid "+sid.getValue());
-                            pid = guid;
-                            endsCount++;
+                            //pid = guid;
+                            //endsCount++;
+                            endsList.add(guid);
                         } else {
-                            Identifier obsoletedBy = sysmeta.getObsoletedBy();
-                            SystemMetadata obsoletedBySysmeta = HazelcastService.getInstance().getSystemMetadataMap().get(obsoletedBy);
-                            if(obsoletedBySysmeta != null) {
-                                Identifier sidInObsoletedBy = obsoletedBySysmeta.getSeriesId();
-                                if(sidInObsoletedBy == null|| !sidInObsoletedBy.equals(sid)) {
+                            //Identifier obsoletedBy = sysmeta.getObsoletedBy();
+                            Identifier obsoletedBy = new Identifier();
+                            obsoletedBy.setValue(obsoletedByStr);
+                            //SystemMetadata obsoletedBySysmeta = HazelcastService.getInstance().getSystemMetadataMap().get(obsoletedBy);
+                            String sql2 = "select series_id, guid from systemMetadata where guid = ? ";
+                            stmt2 = dbConn.prepareStatement(sql2);
+                            stmt2.setString(1, obsoletedByStr);
+                            result = stmt2.executeQuery();
+                            boolean next = result.next();
+                            //if(obsoletedBySysmeta != null) {
+                            if(next) {
+                                logMetacat.debug("The object "+obsoletedBy+" which obsoletes "+guidStr+" does have a system metadata on the table.");
+                                //Identifier sidInObsoletedBy = obsoletedBySysmeta.getSeriesId();
+                                String sidInObsoletedBy = result.getString(1);
+                                if(sidInObsoletedBy == null|| !sidInObsoletedBy.equals(sid.getValue())) {
                                     // type 2 end
-                                    logMetacat.debug(""+guidStr+" is a type 2 end for sid "+sid.getValue());
-                                    pid = guid;
-                                    endsCount++;
+                                    logMetacat.debug(""+guidStr+" is a type 2 end for sid "+sid.getValue()+ "since it is obsoleted by the object "+sidInObsoletedBy+
+                                            " which has a different sid or no sids");
+                                    //pid = guid;
+                                    //endsCount++;
+                                    endsList.add(guid);
                                 }
                             } else {
+                                logMetacat.debug("The object "+obsoletedBy+" which obsoletes "+guidStr+" is missing on the host.");
                                 //obsoletedBySysmeta doesn't exist; it means the object is missing
                                 //generally, we consider it we generally consider it a type 2 end except:
                                  //there is another object in the chain (has the same series id) that obsoletes the missing object. 
-                                String sql2 = "select guid from systemMetadata where  obsoletes = ? and series_id = ?";
+                                /*String sql2 = "select guid from systemMetadata where  obsoletes = ? and series_id = ?";
                                 PreparedStatement stmt2 = dbConn.prepareStatement(sql2);
                                 stmt2.setString(1, obsoletedBy.getValue());
                                 stmt2.setString(2, sid.getValue());
@@ -1057,27 +1090,49 @@ public class IdentifierManager {
                                     // something is wrong - there are more than one objects obsolete the missing object!
                                     hasError = true;
                                     break;
+                                }*/
+                                if(obsoletesIdGuidMap != null && obsoletesIdGuidMap.containsKey(obsoletedByStr)) {
+                                   //This is the exception - another object in the chain (has the same series id) that obsoletes the missing object
+                                    //The obsoletesIdGuidMap maintains the relationship (with the same  series id)
+                                    logMetacat.debug("Though the object "+obsoletedBy+" which obsoletes "+guidStr+" is missing."+
+                                            " However, there is another object "+obsoletesIdGuidMap.get(obsoletedByStr)+" in the chain obsoleting it. So it is not an end.");
+                                  
+                                } else {
+                                    //the exception (another object in the chain (has the same series id) that obsoletes the missing object) doesn't exist
+                                    // it is a type 2 end
+                                    logMetacat.debug(""+guidStr+" is a type 2 end for sid "+sid.getValue());
+                                    //pid = guid;
+                                    //endsCount++;
+                                    endsList.add(guid);
                                 }
                             }
                         }
                         hasNext = rs.next();
                     }
-                    if(endsCount == 1) {
-                        //it has one end and it is an ideal chain. We already assign the guid to the pid. So do nothing.
-                        logMetacat.info("It is an ideal for sid "+sid.getValue());
-                    }
-                    if(hasError || endsCount >1) {
-                        // it is not an ideal chain, use the one with latest upload date(the first one in the result set since we have the desc order)
-                        logMetacat.info("It is NOT an ideal for sid "+sid.getValue());
+                    if(hasError) {
+                        logMetacat.info("The sid chain "+sid.getValue()+" was messed up and we will return the object with the latest upload date.");
                         pid = firstOne;
+                    } else {
+                        if(endsList.size() == 1) {
+                            //it has one end and it is an ideal chain. We already assign the guid to the pid. So do nothing.
+                            logMetacat.info("It is an ideal chain for sid "+sid.getValue());
+                            pid = endsList.get(0);
+                        } else if (endsList.size() ==0) {
+                            logMetacat.info("This is weird situation and we don't find any end. We use the latest DateOfupload");
+                            pid=checkObsoletesChain(firstOne, obsoletesIdGuidMap);
+                        } else if(endsList.size() >1) {
+                            // it is not an ideal chain, use the one with latest upload date(the first one in the result set since we have the desc order)
+                            logMetacat.info("It is NOT an ideal chain for sid "+sid.getValue());
+                            pid = checkObsoletesChain(endsList.get(0), obsoletesIdGuidMap);
+                        }
                     }
+                    
                 } else {
                     //it is not a sid or at least we don't have anything to match it.
                     //do nothing, so null will be returned
+                    logMetacat.info("We don't find anything matching the id "+sid.getValue()+" as sid. The null will be returned since it is probably a pid");
                 }
-                if(rs != null) {
-                    rs.close();
-                }
+                
                 
             } catch (SQLException e) {
                 logMetacat.error("Error while get the head pid for the sid "+sid.getValue()+" : " 
@@ -1085,8 +1140,17 @@ public class IdentifierManager {
                 throw e;
             } finally {
                 try {
+                    if(rs != null) {
+                        rs.close();
+                    }
+                    if(result != null) {
+                        result.close();
+                    }
                     if(stmt != null) {
                         stmt.close();
+                    }
+                    if(stmt2 != null) {
+                        stmt2.close();
                     }
                 } catch (Exception e) {
                     logMetacat.warn("Couldn't close the prepared statement since "+e.getMessage());
@@ -1096,9 +1160,39 @@ public class IdentifierManager {
                 }
             }
         }
+        if(pid != null && sid != null) {
+            logMetacat.info("The head of chain for sid "+sid.getValue()+"  --is--  "+pid.getValue());
+        } else if(pid == null && sid != null) {
+            logMetacat.info("The head of chain for sid "+sid.getValue()+" is null. So it is pid.");
+        }
+        
         return pid;
     }
     
+    /*
+     * For the non-ideal chain, we used to return the latest Dateupload object as the head pid. However, Dateupload
+     * sometimes doesn't refect the obsoletes chain. We need to check if any other objects obsoletes it recursively.
+     * see ticket:https://redmine.dataone.org/issues/7624
+     */
+    private Identifier checkObsoletesChain(Identifier latestDateUpload, HashMap<String, String>obsoletesIdGuidMap) {
+        Identifier pid = latestDateUpload;
+        if(obsoletesIdGuidMap != null && latestDateUpload != null && obsoletesIdGuidMap.containsKey(latestDateUpload.getValue())) {
+            logMetacat.debug("Another object obsoletes the lasted uploaded object "+latestDateUpload.getValue());
+            //another object obsoletes the lastedDateUpload object
+            String pidStr = obsoletesIdGuidMap.get(latestDateUpload.getValue());
+            while (obsoletesIdGuidMap.containsKey(pidStr)) {
+                pidStr = obsoletesIdGuidMap.get(pidStr);
+                logMetacat.debug("Another object "+pidStr+" obsoletes the object ");
+            }
+            pid = new Identifier();
+            pid.setValue(pidStr);
+            
+        }
+        if(pid != null && latestDateUpload != null){
+            logMetacat.debug("IdnetifierManager.checkObsoletesChain - The final return value is "+pid.getValue()+ " for given value "+latestDateUpload.getValue());
+        }
+        return pid;
+    }
     /**
      * Check if the specified sid object exists on the serial id field on the system metadata table
      * @param sid
