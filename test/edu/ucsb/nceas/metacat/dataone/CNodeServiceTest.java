@@ -27,6 +27,7 @@ package edu.ucsb.nceas.metacat.dataone;
 
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.text.SimpleDateFormat;
@@ -40,6 +41,9 @@ import junit.framework.TestSuite;
 
 import org.apache.commons.beanutils.BeanUtils;
 import org.apache.commons.io.IOUtils;
+import org.dataone.client.D1Node;
+import org.dataone.client.NodeLocator;
+import org.dataone.client.exception.ClientSideException;
 import org.dataone.client.v2.CNode;
 import org.dataone.client.v2.itk.D1Client;
 import org.dataone.service.exceptions.BaseException;
@@ -75,6 +79,7 @@ import org.dataone.service.types.v2.SystemMetadata;
 import org.dataone.service.util.Constants;
 
 import edu.ucsb.nceas.metacat.dataone.CNodeService;
+import edu.ucsb.nceas.metacat.dataone.D1NodeService;
 import edu.ucsb.nceas.metacat.dataone.MNodeService;
 
 /**
@@ -120,7 +125,7 @@ public class CNodeServiceTest extends D1NodeServiceTest {
 		suite.addTest(new CNodeServiceTest("testListViews"));
 		suite.addTest(new CNodeServiceTest("testUpdateSystemMetadata"));
 		suite.addTest(new CNodeServiceTest("testArchive"));
-	
+		
 		return suite;
 	}
 	
@@ -1466,6 +1471,8 @@ public class CNodeServiceTest extends D1NodeServiceTest {
         }
      }
   }
+  
+  
   
   public Session getMNSessionFromCN() throws NotImplemented, ServiceFailure {
       Session session = new Session();

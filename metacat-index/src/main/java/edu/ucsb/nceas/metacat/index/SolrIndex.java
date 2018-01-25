@@ -66,6 +66,7 @@ import org.dataone.cn.indexer.parser.SolrField;
 import org.dataone.cn.indexer.solrhttp.SolrDoc;
 import org.dataone.cn.indexer.solrhttp.SolrElementAdd;
 import org.dataone.cn.indexer.solrhttp.SolrElementField;
+import org.dataone.exceptions.MarshallingException;
 import org.dataone.service.exceptions.NotFound;
 import org.dataone.service.exceptions.NotImplemented;
 import org.dataone.service.exceptions.ServiceFailure;
@@ -76,7 +77,6 @@ import org.dataone.service.types.v2.SystemMetadata;
 import org.dataone.service.util.DateTimeMarshaller;
 import org.dataone.service.util.TypeMarshaller;
 import org.dspace.foresite.OREParserException;
-import org.jibx.runtime.JiBXException;
 import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 
@@ -185,7 +185,7 @@ public class SolrIndex {
      * @throws SAXException
      * @throws ParserConfigurationException
      * @throws XPathExpressionException
-     * @throws JiBXException 
+     * @throws MarshallingException 
      * @throws SolrServerException 
      * @throws EncoderException
      * @throws UnsupportedType 
@@ -194,7 +194,7 @@ public class SolrIndex {
      */
     private Map<String, SolrDoc> process(String id, SystemMetadata systemMetadata, String objectPath)
                     throws IOException, SAXException, ParserConfigurationException,
-                    XPathExpressionException, JiBXException, EncoderException, SolrServerException, NotImplemented, NotFound, UnsupportedType{
+                    XPathExpressionException, MarshallingException, EncoderException, SolrServerException, NotImplemented, NotFound, UnsupportedType{
         log.debug("SolrIndex.process - trying to generate the solr doc object for the pid "+id);
         // Load the System Metadata document
         ByteArrayOutputStream systemMetadataOutputStream = new ByteArrayOutputStream();
@@ -374,7 +374,7 @@ public class SolrIndex {
      * @param systemMetadata  the system metadata associated with the data object
      * @param data  the path to the object file itself
      * @throws SolrServerException 
-     * @throws JiBXException 
+     * @throws MarshallingException 
      * @throws EncoderException 
      * @throws UnsupportedType 
      * @throws NotFound 
@@ -382,7 +382,7 @@ public class SolrIndex {
      */
     private synchronized void insert(Identifier pid, SystemMetadata systemMetadata, String objectPath) 
                     throws IOException, SAXException, ParserConfigurationException,
-                    XPathExpressionException, SolrServerException, JiBXException, EncoderException, NotImplemented, NotFound, UnsupportedType {
+                    XPathExpressionException, SolrServerException, MarshallingException, EncoderException, NotImplemented, NotFound, UnsupportedType {
         checkParams(pid, systemMetadata, objectPath);
         log.debug("SolrIndex.insert - trying to insert the solrDoc for object "+pid.getValue());
         Map<String, SolrDoc> docs = process(pid.getValue(), systemMetadata, objectPath);
@@ -580,7 +580,7 @@ public class SolrIndex {
      * @throws SAXException
      * @throws ParserConfigurationException
      * @throws OREParserException
-     * @throws JiBXException
+     * @throws MarshallingException
      * @throws EncoderException
      */
     void update(Identifier pid, SystemMetadata systemMetadata, String objectPath) throws Exception {

@@ -132,7 +132,7 @@
          	</xsl:for-each>
          </xsl:variable>
 
-  	<!--  Name -->
+ 	<!--  Name -->
   	<div class="control-group">
 		<label class="control-label">Name</label>
 		<div class="controls controls-well">
@@ -171,7 +171,6 @@
 		     </xsl:choose>
 		</span>
 	</div>	
-    
   
 
 	<!-- attribute label-->

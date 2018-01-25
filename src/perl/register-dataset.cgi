@@ -1386,9 +1386,9 @@ sub processFile {
 	if ( !$contentType ) {
 		$contentType = 'text/plain';
 	} elsif ( $contentType =~ "application/vnd.ms-excel" && $fileName =~ /\.csv$/) {
-        debug("Reassigning content type (" . $contentType . ")to CSV for file: " . $fileName);
-        $contentType = 'text/csv';
-    }
+        	debug("Reassigning content type (" . $contentType . ")to CSV for file: " . $fileName);
+        	$contentType = 'text/csv';
+    	}
 
 	my %dataInfo = (
 		'fileName'    => $outFile,

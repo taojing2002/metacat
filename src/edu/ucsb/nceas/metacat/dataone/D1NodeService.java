@@ -72,6 +72,7 @@ import org.dataone.service.types.v1.Group;
 import org.dataone.service.types.v1.Identifier;
 import org.dataone.service.types.v1.ObjectFormatIdentifier;
 import org.dataone.service.types.v1.ObjectList;
+import org.dataone.service.types.v1.SubjectInfo;
 import org.dataone.service.types.v2.Log;
 import org.dataone.service.types.v2.Node;
 import org.dataone.service.types.v2.OptionList;
@@ -467,7 +468,8 @@ public abstract class D1NodeService {
             throw e;
         } catch (Exception e) {
             removeSystemMeta(pid);
-            throw new ServiceFailure("1190", "The node is unable to create the object: " + e.getMessage());
+            logMetacat.error("The node is unable to create the object: "+pid.getValue()+ " since " + e.getMessage(), e);
+            throw new ServiceFailure("1190", "The node is unable to create the object: " +pid.getValue()+" since "+ e.getMessage());
         }
                     
       } else {
@@ -513,7 +515,13 @@ public abstract class D1NodeService {
    * Roll-back method when inserting data object fails.
    */
   protected void removeSystemMeta(Identifier id){
+      if(id != null) {
+          logMetacat.debug("D1NodeService.removeSystemMeta - the system metadata of object "+id.getValue()+" will removed from both hazelcast and db tables");
+      }
       HazelcastService.getInstance().getSystemMetadataMap().remove(id);
+      if(id != null) {
+          logMetacat.debug("D1NodeService.removeSystemMeta - the system metadata of object "+id.getValue()+" has been removed from both hazelcast and db tables");
+      }
   }
   
   /*
@@ -1003,7 +1011,7 @@ public abstract class D1NodeService {
       for ( Node node : nodes ) {
           
           NodeReference nodeReference = node.getIdentifier();
-          logMetacat.debug("In isCNAdmin(), Node reference is: " + nodeReference.getValue());
+          logMetacat.debug("In isCNAdmin(), a Node reference from the CN node list is: " + nodeReference.getValue());
           
           Subject subject = session.getSubject();
           
@@ -1013,7 +1021,7 @@ public abstract class D1NodeService {
               // check if the session subject is in the node subject list
               for (Subject nodeSubject : nodeSubjects) {
                   logMetacat.debug("In isCNAdmin(), comparing subjects: " +
-                      nodeSubject.getValue() + " and " + subject.getValue());
+                      nodeSubject.getValue() + " and the user " + subject.getValue());
                   if ( nodeSubject.equals(subject) ) {
                       allowed = true; // subject of session == target node subject
                       break;
@@ -1046,7 +1054,7 @@ public abstract class D1NodeService {
          return false;
       }
       
-      logMetacat.debug("In isNodeAdmin(), MN authorization for " +
+      logMetacat.debug("In isNodeAdmin(), MN authorization for the user " +
            session.getSubject().getValue());
       
       Node node = MNodeService.getInstance(request).getCapabilities();
@@ -1061,7 +1069,7 @@ public abstract class D1NodeService {
           // check if the session subject is in the node subject list
           for (Subject nodeSubject : nodeSubjects) {
               logMetacat.debug("In isNodeAdmin(), comparing subjects: " +
-                  nodeSubject.getValue() + " and " + subject.getValue());
+                  nodeSubject.getValue() + " and the user" + subject.getValue());
               if ( nodeSubject.equals(subject) ) {
                   allowed = true; // subject of session == this node's subect
                   break;
@@ -1147,7 +1155,7 @@ public abstract class D1NodeService {
    * 1. Owner can have any permission.
    * 2. Access table allow the user has the permission
    */
-  public static boolean userHasPermission(Session userSession, Identifier pid, Permission permission ) throws NotFound{
+  public static boolean userHasPermission(Session userSession, Identifier pid, Permission permission ) throws NotFound, ServiceFailure, NotImplemented, InvalidRequest, InvalidToken, NotAuthorized {
       boolean allowed = false;
       // permissions are hierarchical
       List<Permission> expandedPermissions = null;
@@ -1164,8 +1172,8 @@ public abstract class D1NodeService {
       } catch (Exception e) {
           // convert Hazelcast RuntimeException to NotFound
           logMetacat.error("An error occurred while getting system metadata for identifier " +
-              pid.getValue() + ". The error message was: " + e.getMessage());
-          throw new NotFound("1800", "No record found for " + pidStr);
+              pid.getValue() + ". The error message was: " + e.getMessage(), e);
+          throw new ServiceFailure("1090", "Can't get the system metadata for " + pidStr+ " since "+e.getMessage());
           
       } 
       
@@ -1197,6 +1205,12 @@ public abstract class D1NodeService {
           allowed = systemMetadata.getRightsHolder().equals(s);
           if (allowed) {
               return allowed;
+          } else {
+              //check if the rightHolder is a group name. If it is, any member of the group can be considered a the right holder.
+              allowed = expandRightsHolder(systemMetadata.getRightsHolder(), s);
+              if(allowed) {
+                  return allowed;
+              }
           }
       }    
       
@@ -1229,6 +1243,70 @@ public abstract class D1NodeService {
         
       }
       return allowed;
+  }
+  
+  
+  /**
+   * Check if the given userSession is the member of the right holder group (if the right holder is a group subject).
+   * If the right holder is not a group, it will be false of course.
+   * @param rightHolder the subject of the right holder.
+   * @param userSession the subject will be compared
+   * @return true if the user session is a member of the right holder group; false otherwise.
+ * @throws NotImplemented 
+ * @throws ServiceFailure 
+ * @throws NotAuthorized 
+ * @throws InvalidToken 
+ * @throws InvalidRequest 
+   */
+  public static boolean expandRightsHolder(Subject rightHolder, Subject userSession) throws ServiceFailure, NotImplemented, InvalidRequest, InvalidToken, NotAuthorized {
+      boolean is = false;
+      if(rightHolder != null && userSession != null && rightHolder.getValue() != null && !rightHolder.getValue().trim().equals("") && userSession.getValue() != null && !userSession.getValue().trim().equals("")) {
+          CNode cn = D1Client.getCN();
+          logMetacat.debug("D1NodeService.expandRightHolder - after getting the cn node and cn node is "+cn.getNodeBaseServiceUrl());
+          String query= rightHolder.getValue();
+          int start =0;
+          int count=-1;
+          String status = null;
+          Session session = null;
+          SubjectInfo subjects = cn.listSubjects(session, query, status, start, count);
+          if(subjects != null) {
+              logMetacat.debug("D1NodeService.expandRightHolder - search the subject "+query+" in the cn and the returned result is not null");
+              List<Group> groups = subjects.getGroupList();
+              if(groups != null) {
+                  logMetacat.debug("D1NodeService.expandRightHolder - search the subject "+query+" in the cn and the returned result does include groups and the size of groups is "+groups.size());
+                  for(Group group : groups) {
+                      //logMetacat.debug("D1NodeService.expandRightHolder - group has the subject "+group.getSubject().getValue());
+                      if(group != null && group.getSubject() != null && group.getSubject().equals(rightHolder)) {
+                          logMetacat.debug("D1NodeService.expandRightHolder - there is a group in the list having the subjecct "+group.getSubject().getValue()+" which matches the right holder's subject "+rightHolder.getValue());
+                          List<Subject> members = group.getHasMemberList();
+                          if(members != null ){
+                              logMetacat.debug("D1NodeService.expandRightHolder - the group "+group.getSubject().getValue()+" in the cn has members");
+                              for(Subject member : members) {
+                                  logMetacat.debug("D1NodeService.expandRightHolder - compare the member "+member.getValue()+" with the user "+userSession.getValue());
+                                  if(member.getValue() != null && !member.getValue().trim().equals("") && userSession.getValue() != null && member.getValue().equals(userSession.getValue())) {
+                                      logMetacat.debug("D1NodeService.expandRightHolder - Find it! The member "+member.getValue()+" in the group "+group.getSubject().getValue()+" matches the user "+userSession.getValue());
+                                      is = true;
+                                      return is;
+                                  }
+                              }
+                          }
+                          break;//we found the group but can't find the member matches the user. so break it.
+                      }
+                  }
+              } else {
+                  logMetacat.debug("D1NodeService.expandRightHolder - search the subject "+query+" in the cn and the returned result does NOT have a group");
+              }
+          } else {
+              logMetacat.debug("D1NodeService.expandRightHolder - search the subject "+query+" in the cn and the returned result is null");
+          }
+          if(!is) {
+              logMetacat.debug("D1NodeService.expandRightHolder - We can NOT find any member in the group "+query+" (if it is a group) matches the user "+userSession.getValue());
+          }
+      } else {
+          logMetacat.debug("D1NodeService.expandRightHolder - We can't determine if the use subject is a member of the right holder group since one of them is null or blank");
+      }
+     
+      return is;
   }
   /*
    * parse a logEntry and get the relevant field from it
@@ -1397,8 +1475,9 @@ public abstract class D1NodeService {
     		detailCode = "1310";
     		
     	}
+    	logMetacat.error("D1NodeService.insertOrUpdateDocument - Error inserting or updating document: "+pid.getValue()+" since "+result);
         throw new ServiceFailure(detailCode, 
-          "Error inserting or updating document: " + result);
+          "Error inserting or updating document: " +pid.getValue()+" since "+ result);
     }
     logMetacat.debug("Finsished inserting xml document with id " + localId);
     

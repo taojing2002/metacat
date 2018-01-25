@@ -8,7 +8,7 @@
 Metacat: XML Metadata and Data Management System
 ------------------------------------------------                      
 
-Version: 2.7.2 Release
+Version: 2.8.0 Release
 
 Send feedback and bugs to: metacat-dev@ecoinformatics.org
                            http://bugzilla.ecoinformatics.org
@@ -54,6 +54,14 @@ Installation
 See the file "docs/install.html" for detailed instructions
 for your OS.
 
+Release Notes for 2.8.0:
+------------------------
+New features and bugs fixed in this release:
+* Modify Metacat code according to the change of dataone library migrating from JibX to JAXB
+* Upgrade Solr to 3.6.2 to fix searching issues
+* Metacat is not expanding groups in the rightsHolder field during authorization
+* Improve error message for: User tried to update an access module when they dont have ‘ALL’ permission!"
+
 
 Release Notes for 2.7.2:
 ------------------------
@@ -65,7 +73,7 @@ New features and bugs fixed in this release:
 * Metacat creates an Invalid Content-Disposition value for some filenames
 * External links in the registry should open in new tab
 * Remove the support of Oracle on documentation
-* Changing a Metacat member node's synchronization value on the d1 admin page doesn't work
+* Changing a Metacat member node's synchronization value on the d1 admin page doesn't work  
 * Add the feature to support the noNamespaceSchemaLocation attribute in xml objects
 * Provide clear messages to clients if the namespaces/formatids of the schemas of xml objects are not registered in Metacat
 * Disable the feature of downloading external schemas for unregistered namespaces
@@ -75,17 +83,13 @@ Release Notes for 2.7.1:
 ------------------------
 * Fixed several bugs on the data registry form
 * Support the onedcx schema
-	- Fixed several onedcx stylesheet issues
+  - Fixed several onedcx stylesheet issues
 
 Relese Notes for 2.7.0:
 ------------------------
-* Drop support for Oracle database
 * Use different format ids to identity variants of the schema with same namespace
 * Add EML 2.1.1 to Darwin Core supporting for OAI-PMH provider  
-* Add external link to FGDC stylesheet(7033)
-* Add ONEDCX stylesheet for D1 view service
 * Bugs fixed include:
-  - Metacat always shows the https protocol on the dataone base url even it is configured without supporting ssl(7034)
   - Series head resolution should use obsoletes field as part of determination(7020)
   - The InputStream (parameter) in the CN/MN.create and MN.update method is not closed(7005)
   - Use the AutoCloseClientInputStream class in the d1_libclient_java in Metacat replication(7004)

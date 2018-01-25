@@ -64,6 +64,7 @@ import junit.framework.TestSuite;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.dataone.client.v2.formats.ObjectFormatCache;
+import org.dataone.exceptions.MarshallingException;
 import org.dataone.configuration.Settings;
 import org.dataone.ore.ResourceMapFactory;
 import org.dataone.service.util.Constants;
@@ -100,7 +101,6 @@ import org.dataone.service.types.v1.SubjectInfo;
 import org.dataone.service.types.v1.util.ChecksumUtil;
 import org.dataone.service.types.v2.SystemMetadata;
 import org.dspace.foresite.ResourceMap;
-import org.jibx.runtime.JiBXException;
 import org.junit.After;
 import org.junit.Before;
 
@@ -181,6 +181,9 @@ public class MNodeServiceTest extends D1NodeServiceTest {
     suite.addTest(new MNodeServiceTest("testCreateAndUpdateXMLWithUnmatchingEncoding"));
     suite.addTest(new MNodeServiceTest("testListViews"));
     suite.addTest(new MNodeServiceTest("testCreateNOAAObject"));
+    
+    suite.addTest(new MNodeServiceTest("testPermissionOfUpdateSystemmeta"));
+    
    
     
     suite.addTest(new MNodeServiceTest("testCreateAndUpdateXMLWithUnmatchingEncoding"));
@@ -899,7 +902,7 @@ public class MNodeServiceTest extends D1NodeServiceTest {
       assertNotNull(node);
       // TODO: should probably test other parts of the node information
       
-    } catch (JiBXException e) {
+    } catch (MarshallingException e) {
         e.printStackTrace();
         fail("The node instance couldn't be parsed correctly:" + e.getMessage());
         
@@ -2483,4 +2486,48 @@ public class MNodeServiceTest extends D1NodeServiceTest {
         assertTrue(pid.getValue().equals(guid.getValue()));
     }
     
+    
+    /**
+     * Test the permission control on the updateSystemMetadata method
+     * @throws Exception
+     */
+    public void testPermissionOfUpdateSystemmeta() throws Exception {
+        String str = "object1";
+       
+        Date date = new Date();
+        Thread.sleep(2000);
+        //insert a test document
+        Session session = getTestSession();
+        Identifier guid = new Identifier();
+        guid.setValue(generateDocumentId());
+        InputStream object1 = new ByteArrayInputStream(str.getBytes("UTF-8"));
+        SystemMetadata sysmeta = createSystemMetadata(guid, session.getSubject(), object1);
+        MNodeService.getInstance(request).create(session, guid, object1, sysmeta);
+        //Test the generating object succeeded. 
+        SystemMetadata metadata = MNodeService.getInstance(request).getSystemMetadata(session, guid);
+        
+        //Test cn session -success
+        Session cnSession= getCNSession();
+        MNodeService.getInstance(request).updateSystemMetadata(cnSession, guid, metadata);
+        
+        //Test mn session - success
+        Session mnSession = getMNSession();
+        metadata = MNodeService.getInstance(request).getSystemMetadata(session, guid);
+        MNodeService.getInstance(request).updateSystemMetadata(mnSession, guid, metadata);
+        
+        //Test the owner session -success
+        metadata = MNodeService.getInstance(request).getSystemMetadata(session, guid);
+        MNodeService.getInstance(request).updateSystemMetadata(session, guid, metadata);
+        
+        //Test another session -failed
+        Session anotherSession = getAnotherSession();
+        metadata = MNodeService.getInstance(request).getSystemMetadata(session, guid);
+        try {
+             MNodeService.getInstance(request).updateSystemMetadata(anotherSession, guid, metadata);
+            fail("Another user can't update the system metadata");
+        } catch (NotAuthorized e)  {
+            
+        }
+       
+    }
 }

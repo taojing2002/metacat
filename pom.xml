@@ -4,15 +4,15 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.ecoinformatics</groupId>
     <artifactId>metacat</artifactId>
-    <version>2.7.2</version>
+    <version>2.8.0</version>
     <name>metacat</name>
     <packaging>war</packaging>
     <url>http://maven.apache.org</url>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <d1_libclient_version>2.2.0</d1_libclient_version>
-        <d1_portal_version>2.2.0</d1_portal_version>
-        <metacat_common_version>2.7.2</metacat_common_version>            
+        <d1_libclient_version>2.3.0</d1_libclient_version>
+        <d1_portal_version>2.3.0</d1_portal_version>
+        <metacat_common_version>2.8.0</metacat_common_version>            
     </properties>
     <repositories>
         <repository>
@@ -282,7 +282,7 @@
 		<dependency>
 			<groupId>org.apache.solr</groupId>
 			<artifactId>solr-solrj</artifactId>
-			<version>3.4.0</version>
+			<version>3.6.2</version>
 			<exclusions>
 				<exclusion>
 		        	<groupId>junit</groupId>
@@ -346,7 +346,7 @@
 			<artifactId>jena-tdb</artifactId>
 			<version>1.0.0</version>
 		</dependency>
-        <dependency>
+		 <dependency>
             <groupId>javax.servlet</groupId>
             <artifactId>servlet-api</artifactId>
             <version>2.5</version>

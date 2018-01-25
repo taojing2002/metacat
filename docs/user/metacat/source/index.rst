@@ -2,7 +2,7 @@
 Metacat Administrator's Guide
 =============================
 
-.. sidebar:: Version: 2.7.2
+.. sidebar:: Version: |release|
 
     .. image:: themes/metacatui/static/metacat-logo-darkgray.png
        :height: 130pt
@@ -13,7 +13,7 @@ Metacat Administrator's Guide
 
     License: GPL
     
-    Release Date: September, 2016
+    Release Date: |today|
 
 Metacat is a repository for data and metadata (documentation about data) that helps 
 scientists find, understand and effectively use data sets they manage or that 
@@ -26,28 +26,52 @@ in other ways.
 - Download Metacat
 
     - Binary Distribution (A war file installation)
-        - GZIP File: metacat-bin-2.7.2.tar.gz_
-        - ZIP File: metacat-bin-2.7.2.zip_
+        - GZIP File: |bin-link-pre|\ |release|\ |bin-gz-link-post1|\ |release|\ |gz-link-post2|
+        - ZIP File: |bin-link-pre|\ |release|\ |bin-zip-link-post1|\ |release|\ |zip-link-post2|
     - Source Distribution (Full source, requiring build)
-        - GZIP File: metacat-src-2.7.2.tar.gz_
-        - ZIP File: metacat-src-2.7.2.zip_
+        - GZIP File: |src-link-pre|\ |release|\ |src-gz-link-post1|\ |release|\ |gz-link-post2|
+        - ZIP File: |src-link-pre|\ |release|\ |src-zip-link-post1|\ |release|\ |zip-link-post2|
     - `Older versions`_
+
+.. |bin-link-pre| raw:: html
+
+    <a href="https://knb.ecoinformatics.org/software/dist/metacat-bin-
+
+.. |bin-gz-link-post1| raw:: html
+
+    .tar.gz">metacat-bin-
+
+.. |gz-link-post2| raw:: html
+
+    .tar.gz</a>
     
+.. |bin-zip-link-post1| raw:: html
+
+    .zip">metacat-bin-
+
+.. |zip-link-post2| raw:: html
+
+    .zip</a>
+
+.. |src-link-pre| raw:: html
+
+    <a href="https://knb.ecoinformatics.org/software/dist/metacat-src-
+
+.. |src-gz-link-post1| raw:: html
+
+    .tar.gz">metacat-src-
+
+.. |src-zip-link-post1| raw:: html
+
+    .zip">metacat-src-
+   
 - For Developers: Metacat `API documentation`_
 
-.. _Administrators Guide: http://knb.ecoinformatics.org/software/metacat/MetacatAdministratorGuide.pdf
+.. _Administrators Guide: https://knb.ecoinformatics.org/software/metacat/MetacatAdministratorGuide.pdf
 
 .. _API documentation: ./api/index.html
 
-.. _metacat-bin-2.7.2.tar.gz: http://knb.ecoinformatics.org/software/dist/metacat-bin-2.7.2.tar.gz
-
-.. _metacat-bin-2.7.2.zip: http://knb.ecoinformatics.org/software/dist/metacat-bin-2.7.2.zip
-
-.. _metacat-src-2.7.2.tar.gz: http://knb.ecoinformatics.org/software/dist/metacat-src-2.7.2.tar.gz
-
-.. _metacat-src-2.7.2.zip: http://knb.ecoinformatics.org/software/dist/metacat-src-2.7.2.zip
-
-.. _Older versions: http://knb.ecoinformatics.org/software/dist/
+.. _Older versions: https://knb.ecoinformatics.org/software/dist/
 
 Contents
 ========
