@@ -48,12 +48,14 @@ import org.apache.solr.servlet.SolrRequestParsers;
 import org.dataone.service.exceptions.NotFound;
 import org.dataone.service.exceptions.NotImplemented;
 import org.dataone.service.exceptions.UnsupportedType;
+import org.dataone.service.types.v1.Event;
 import org.dataone.service.types.v1.Identifier;
 import org.dataone.service.types.v1.Subject;
 import org.dataone.service.types.v1.SystemMetadata;
 import org.xml.sax.SAXException;
 
 import edu.ucsb.nceas.metacat.DBTransform;
+import edu.ucsb.nceas.metacat.EventLog;
 import edu.ucsb.nceas.metacat.common.index.IndexTask;
 import edu.ucsb.nceas.metacat.common.query.SolrQueryResponseWriterFactory;
 import edu.ucsb.nceas.metacat.common.query.SolrQueryService;
@@ -122,6 +124,8 @@ public class MetacatSolrIndex {
             throw new SolrServerException("MetacatSolrIndex.query - There is no any authorized subjects(even the public user) in this query session.");
         }
         InputStream inputStream = null;
+        // allow "+" in query syntax, see: https://projects.ecoinformatics.org/ecoinfo/issues/6435
+        query = query.replaceAll("\\+", "%2B");
         SolrParams solrParams = SolrRequestParsers.parseQueryString(query);
         String wt = solrParams.get(SolrQueryService.WT);
         // handle normal and skin-based queries
@@ -168,12 +172,21 @@ public class MetacatSolrIndex {
         return inputStream;
      
     }
-    
-    public void submit(Identifier pid, SystemMetadata systemMetadata, Map<String, List<Object>> fields) {
+
+    public void submit(Identifier pid, SystemMetadata systemMetadata, Map<String, List<Object>> fields, boolean followRevisions) {
     	IndexTask task = new IndexTask();
     	task.setSystemMetadata(systemMetadata);
     	task.setFields(fields);
-		HazelcastService.getInstance().getIndexQueue().put(pid, task );
+		HazelcastService.getInstance().getIndexQueue().put(pid, task);
+		
+		// submit older revisions recursively otherwise they stay in the index!
+		if (followRevisions && systemMetadata != null && systemMetadata.getObsoletes() != null) {
+			Identifier obsoletedPid = systemMetadata.getObsoletes();
+			SystemMetadata obsoletedSysMeta = HazelcastService.getInstance().getSystemMetadataMap().get(obsoletedPid);
+		    Map<String, List<Object>> obsoletedFields = EventLog.getInstance().getIndexFields(obsoletedPid, Event.READ.xmlValue());
+			this.submit(obsoletedPid, obsoletedSysMeta , obsoletedFields, followRevisions);
+		}
+		
     }
     
 
