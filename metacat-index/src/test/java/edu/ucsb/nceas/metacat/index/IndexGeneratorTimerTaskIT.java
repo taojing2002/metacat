@@ -27,7 +27,7 @@ import org.dataone.service.util.TypeMarshaller;
 import org.junit.Before;
 import org.junit.Test;
 
-public class IndexGeneratorIT {
+public class IndexGeneratorTimerTaskIT {
     /**
      * Test building index for an insert.
      */
@@ -36,7 +36,7 @@ public class IndexGeneratorIT {
         SolrIndex solrIndex = generateSolrIndex();
         SystemMetadataEventListener systeMetaListener = new SystemMetadataEventListener(solrIndex);
         systeMetaListener.start();
-        IndexGenerator generator = new IndexGenerator(solrIndex);
+        IndexGeneratorTimerTask generator = new IndexGeneratorTimerTask(solrIndex);
         generator.indexAll();
         String result = SolrIndexIT.doQuery(solrIndex.getSolrServer());
         systeMetaListener.stop();

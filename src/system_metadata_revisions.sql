@@ -24,6 +24,16 @@ select sm.guid, sm.obsoleted_by, sm.obsoletes, sm_s.guid as should_obsolete
 from systemmetadata sm, systemmetadata sm_s
 where sm.guid = sm_s.obsoleted_by
 and sm.obsoletes is null;
+-- update them
+BEGIN;
+update systemmetadata sm
+set obsoletes = sm_s.guid,
+date_modified = now()
+from systemmetadata sm_s
+where sm.guid = sm_s.obsoleted_by
+and sm.obsoletes is null;
+--ROLLBACK;
+COMMIT;
 
 -- these are ones that should be marked as archived=true but are not
 select sm. guid --count(sm.guid)

@@ -55,8 +55,8 @@ public class ApplicationController implements Runnable {
     private static ApplicationContext context = null;
     private String springConfigFileURL = "/index-processor-context.xml";
     private String metacatPropertiesFile = null;
-    private static int waitingTime = IndexGenerator.WAITTIME;
-    private static int maxAttempts = IndexGenerator.MAXWAITNUMBER;
+    private static int waitingTime = IndexGeneratorTimerTask.WAITTIME;
+    private static int maxAttempts = IndexGeneratorTimerTask.MAXWAITNUMBER;
     private static long period = DEFAULTINTERVAL;
     Log log = LogFactory.getLog(ApplicationController.class);
     
@@ -202,16 +202,16 @@ public class ApplicationController implements Runnable {
      * It will create a timer to run this task periodically. 
      * If the property of "index.regenerate.interval" is less than 0, the thread would NOT run.
      */
-    private void startIndex() {
+    private void startIndexGenerator() {
         if(period > 0) {
             SolrIndex index = solrIndexes.get(FIRST);
             //SystemMetadataEventListener listener = sysmetaListeners.get(FIRST);
-            IndexGenerator generator = new IndexGenerator(index);
+            IndexGeneratorTimerTask generator = new IndexGeneratorTimerTask(index);
             //Thread indexThread = new Thread(generator);
             //indexThread.start();
             Timer indexTimer = new Timer();
             //indexTimer.scheduleAtFixedRate(generator, Calendar.getInstance().getTime(), period);
-            indexTimer.schedule(generator, Calendar.getInstance().getTime(), period);
+            indexTimer.schedule(generator, 60000, period);
         }
         
     }
@@ -222,7 +222,7 @@ public class ApplicationController implements Runnable {
      * @throws ServiceFailure 
      * @throws FileNotFoundException 
      */
-    public void startSysmetaListener() throws FileNotFoundException, ServiceFailure {
+    private void startSysmetaListener() throws FileNotFoundException, ServiceFailure {
         if(sysmetaListeners != null) {
             //only expects one listener.
             for(SystemMetadataEventListener listener : sysmetaListeners) {
@@ -254,7 +254,7 @@ public class ApplicationController implements Runnable {
             }
             initialize();
             startSysmetaListener();
-            startIndex();//it will create another thread.
+            startIndexGenerator();//it will create another thread.
         } catch (Exception e) {
             log.error("Application.run "+e.getMessage());
         }

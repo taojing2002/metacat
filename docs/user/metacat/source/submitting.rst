@@ -116,6 +116,8 @@ To install and run the Registry:
       install URI
       install MSERGEANT/XML-LibXSLT-1.58.tar.gz
       install Captcha:reCAPTCHA
+      install DateTime
+      
 
 2. Install the required system libraries using Ubuntu/Debian (instructions 
    Red Hat in sidebar)
@@ -136,7 +138,8 @@ To install and run the Registry:
       sudo cpan -i Config::Properties
       sudo cpan -i Scalar::Util
       sudo cpan -i Captcha:reCAPTCHA
-
+      sudo cpan -i DateTime
+      
 
 3. Double-check that Metacat's temporary folder, application.tempDir, is 
    writable by the apache user, usually www-data or apache. 
@@ -351,7 +354,7 @@ please see :doc:`replication`.
 +--------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | squery                   | Perform a structured query. For an example, please see Searching Metacat.                                                                                                                                                                                          |
 |                          |                                                                                                                                                                                                                                                                    |
-|                          | ``query`` - the text of the pathquery document sent to the server  																																																|
+|                          | ``query`` - the text of the pathquery document sent to the server                                                                                                                                                                                                  |
 |                          | ``qformat`` - the format to return the results in. Possible values are:  ``xml``, or the name of the a skin.                                                                                                                                                       |
 +--------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | update                   | Overwrite an XML document with a new one and give the new one the same docid but with                                                                                                                                                                              |

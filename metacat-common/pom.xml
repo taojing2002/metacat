@@ -4,12 +4,12 @@
 	<groupId>edu.ucsb.nceas.metacat.common</groupId>
 	<artifactId>metacat-common</artifactId>
 	<packaging>jar</packaging>
-	<version>2.2.1</version>
+	<version>2.3.0</version>
 	<name>metacat-common</name>
 	<url>http://maven.apache.org</url>
 	<properties>
         <d1_solr_index_schema_name>index-solr-schema-v1_1.xml</d1_solr_index_schema_name>
-        <d1_solr_index_schema_url>scm:svn:https://repository.dataone.org/software/cicore/tags/DATAONE-CN-INDEX_v1.1.1/usr/share/dataone-cn-index</d1_solr_index_schema_url>         
+        <d1_solr_index_schema_url>scm:svn:https://repository.dataone.org/software/cicore/tags/DATAONE-CN-INDEX_v1.2.1/usr/share/dataone-cn-index</d1_solr_index_schema_url>         
     </properties>
 	<repositories>
         <repository>
@@ -41,7 +41,18 @@
 			<groupId>org.apache.solr</groupId>
 			<artifactId>solr-core</artifactId>
 			<version>3.4.0</version>
+			<exclusions>
+                <exclusion>
+                  <groupId>org.slf4j</groupId>
+                  <artifactId>slf4j-jdk14</artifactId>
+                </exclusion>
+            </exclusions>
 		</dependency>
+		  <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-log4j12</artifactId>
+            <version>1.6.1</version>
+        </dependency>
 		<dependency>
 			<groupId>org.apache.solr</groupId>
 			<artifactId>solr-test-framework</artifactId>
@@ -100,7 +111,7 @@
             </resource>
         </resources>
 	   <plugins> 
-	    <plugin>
+	       <plugin>
             <groupId>org.apache.maven.plugins</groupId> 
             <artifactId>maven-scm-plugin</artifactId> 
             <version>1.8.1</version> 
@@ -116,8 +127,8 @@
                     </configuration> 
                 </execution>
             </executions>
-        </plugin> 
-        <plugin>
+          </plugin> 
+          <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
                 <version>1.7</version>
@@ -136,7 +147,7 @@
                     </execution>
                 </executions>
         </plugin>
-	     <plugin>
+        <plugin>
             <artifactId>maven-resources-plugin</artifactId>
             <version>2.6</version>
             <executions>
@@ -159,7 +170,7 @@
                     </configuration>            
                  </execution>
                 </executions>
-       </plugin>
+        </plugin>
 		<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>

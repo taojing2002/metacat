@@ -71,7 +71,7 @@ import edu.ucsb.nceas.metacat.index.event.IndexEventLogException;
  * @author tao
  *
  */
-public class IndexGenerator extends TimerTask {
+public class IndexGeneratorTimerTask extends TimerTask {
     
     private static final int FIRST =0;
     private static final int SECOND =1;
@@ -85,14 +85,13 @@ public class IndexGenerator extends TimerTask {
     public static final String WAITIMEPOPERTYNAME = "index.regenerate.start.waitingtime";
     public static final String MAXATTEMPTSPROPERTYNAME = "index.regenerate.start.maxattempts";
     
-    private static int waitingTime = WAITTIME;
-    private static int maxAttempts = MAXWAITNUMBER;
     
     private SolrIndex solrIndex = null;
     //private SystemMetadataEventListener systemMetadataListener = null;
     private IMap<Identifier, SystemMetadata> systemMetadataMap;
     private IMap<Identifier, String> objectPathMap;
-    private Log log = LogFactory.getLog(IndexGenerator.class);
+    private ISet<SystemMetadata> indexQueue;
+    private Log log = LogFactory.getLog(IndexGeneratorTimerTask.class);
     //private MNode mNode = null;
     private static List<String> resourceMapNamespaces = null;
     
@@ -101,39 +100,15 @@ public class IndexGenerator extends TimerTask {
      * @param solrIndex
      * @param systemMetadataListener
      */
-    public IndexGenerator(SolrIndex solrIndex) {
+    public IndexGeneratorTimerTask(SolrIndex solrIndex) {
         this.solrIndex = solrIndex;
         resourceMapNamespaces = Settings.getConfiguration().getList(RESOURCEMAPPROPERYNAME);
         //this.systemMetadataListener = systemMetadataListener;
         //this.mNode = new MNode(buildMNBaseURL());
-        try {
-            waitingTime = Settings.getConfiguration().getInt(WAITIMEPOPERTYNAME);
-            maxAttempts = Settings.getConfiguration().getInt(MAXATTEMPTSPROPERTYNAME);
-        } catch (Exception e) {
-            log.warn("IndexGenerator.constructor - couldn't read the waiting time or maxattempts from the metacat.properties file since : "+e.getMessage()+". Default values will be used");
-            waitingTime = WAITTIME;
-            maxAttempts = MAXWAITNUMBER;
-        }
+      
     }
     
-    /**
-     * Build the index for all documents in Metacat without overwriting.
-     * @throws SolrServerException 
-     * @throws ServiceFailure 
-     * @throws NotImplemented 
-     * @throws NotAuthorized 
-     * @throws InvalidToken 
-     * @throws InvalidRequest 
-     * @throws IndexEventLogException 
-     * @throws IllegalAccessException 
-     * @throws InstantiationException 
-     * @throws ClassNotFoundException 
-     */
-    /*public void indexAll() throws InvalidRequest, InvalidToken, NotAuthorized, 
-                            NotImplemented, ServiceFailure, SolrServerException, FileNotFoundException, ClassNotFoundException, InstantiationException, IllegalAccessException, IndexEventLogException {
-        boolean force = false;
-        indexAll(force);
-    }*/
+   
     
     /**
      * Build the index for all documents.
@@ -217,11 +192,12 @@ public class IndexGenerator extends TimerTask {
         List<String> solrIds = null;
         initSystemMetadataMap();
         initObjectPathMap();
+        initIndexQueue();
         List[] metacatIds = getMetacatIds(since, until);
         List<String> otherMetacatIds = metacatIds[FIRST];
         List<String> resourceMapIds =  metacatIds[SECOND];
-        List<String> otherDeletedMetacatIds = metacatIds[THIRD];
-        List<String> resourceMapDeletedIds = metacatIds[FOURTH];
+        //List<String> otherDeletedMetacatIds = metacatIds[THIRD];
+        //List<String> resourceMapDeletedIds = metacatIds[FOURTH];
         
         //figure out the procesedDate by comparing the last element of otherMetacatIds and resourceMapIds.
         List<Long> maxCollection = new ArrayList<Long>();
@@ -234,14 +210,14 @@ public class IndexGenerator extends TimerTask {
             maxCollection.add(new Long(latestOtherId.getTime()));
         }
         
-        Date latestDeletedOtherIds = null;
+        /*Date latestDeletedOtherIds = null;
         if (otherDeletedMetacatIds != null && !otherDeletedMetacatIds.isEmpty()) {
             int size = otherDeletedMetacatIds.size();
             String id = otherDeletedMetacatIds.get(size-1);
             SystemMetadata sysmeta = getSystemMetadata(id);
             latestDeletedOtherIds = sysmeta.getDateSysMetadataModified();
             maxCollection.add(new Long(latestDeletedOtherIds.getTime()));
-        }
+        }*/
         
         Date latestResourceId = null;
         if (resourceMapIds != null && !resourceMapIds.isEmpty()) {
@@ -252,14 +228,14 @@ public class IndexGenerator extends TimerTask {
             maxCollection.add(new Long(latestResourceId.getTime()));
         }
         
-        Date latestDeletedResourceId = null;
+        /*Date latestDeletedResourceId = null;
         if(resourceMapDeletedIds != null && !resourceMapDeletedIds.isEmpty()) {
             int size = resourceMapDeletedIds.size();
             String id = resourceMapDeletedIds.get(size-1);
             SystemMetadata sysmeta = getSystemMetadata(id);
             latestDeletedResourceId = sysmeta.getDateSysMetadataModified();
             maxCollection.add(new Long(latestDeletedResourceId.getTime()));
-        }
+        }*/
         
         if(!maxCollection.isEmpty()) {
             Long max = Collections.max(maxCollection);
@@ -278,8 +254,8 @@ public class IndexGenerator extends TimerTask {
         
         //add the failedPids 
         List<IndexEvent> failedEvents = EventlogFactory.createIndexEventLog().getEvents(null, null, null, null);
-        List<IndexEvent> failedOtherIds = new ArrayList<IndexEvent>();
-        List<IndexEvent> failedResourceMapIds = new ArrayList<IndexEvent>();
+        List<String> failedOtherIds = new ArrayList<String>();
+        List<String> failedResourceMapIds = new ArrayList<String>();
         if(failedEvents != null) {
             for(IndexEvent event : failedEvents) {
             	String id = event.getIdentifier().getValue();
@@ -287,15 +263,18 @@ public class IndexGenerator extends TimerTask {
                 if(sysmeta != null) {
                     ObjectFormatIdentifier formatId =sysmeta.getFormatId();
                     if(formatId != null && formatId.getValue() != null && resourceMapNamespaces != null && isResourceMap(formatId)) {
-                        failedResourceMapIds.add(event);
+                        failedResourceMapIds.add(id);
                     } else {
-                        failedOtherIds.add(event);
+                        failedOtherIds.add(id);
                     }
                 }
             }
         }
-        indexFailedIds(failedOtherIds);
-        indexFailedIds(failedResourceMapIds);
+        //indexFailedIds(failedOtherIds);
+        //indexFailedIds(failedResourceMapIds);
+        
+        index(failedOtherIds);
+        index(failedResourceMapIds);
         
         /*if(!failedOtherIds.isEmpty()) {
             failedOtherIds.addAll(otherMetacatIds);
@@ -308,17 +287,18 @@ public class IndexGenerator extends TimerTask {
         } else {
             failedResourceMapIds = resourceMapIds;
         }*/
-        
+        //log.info("the ids in index_event for reindex ( except the resourcemap)=====================================\n "+failedOtherIds);
+        //log.info("the resourcemap ids in index_event for reindex =====================================\n "+failedResourceMapIds);
         log.info("the metacat ids (except the resource map ids)-----------------------------"+otherMetacatIds);
         //logFile(otherMetacatIds, "ids-for-timed-indexing-log");
-        log.info("the deleted metacat ids (except the resource map ids)-----------------------------"+otherDeletedMetacatIds);
+        //log.info("the deleted metacat ids (except the resource map ids)-----------------------------"+otherDeletedMetacatIds);
         log.info("the metacat resroucemap ids -----------------------------"+resourceMapIds);
         //logFile(resourceMapIds, "ids-for-timed-indexing-log");
-        log.info("the deleted metacat resroucemap ids -----------------------------"+resourceMapDeletedIds);
+        //log.info("the deleted metacat resroucemap ids -----------------------------"+resourceMapDeletedIds);
         index(otherMetacatIds);
-        removeIndex(otherDeletedMetacatIds);
+        //removeIndex(otherDeletedMetacatIds);
         index(resourceMapIds);
-        removeIndex(resourceMapDeletedIds);
+        //removeIndex(resourceMapDeletedIds);
        
         //record the timed index.
         if(processedDate != null) {
@@ -361,26 +341,7 @@ public class IndexGenerator extends TimerTask {
         if(metacatIds != null) {
             for(String metacatId : metacatIds) {
                 if(metacatId != null) {
-                        try {
-                            generateIndex(metacatId);
-                        } catch (Exception e) {
-                            IndexEvent event = new IndexEvent();
-                            Identifier pid = new Identifier();
-                            pid.setValue(metacatId);
-                            event.setIdentifier(pid);
-                            event.setDate(Calendar.getInstance().getTime());
-                            event.setAction(Event.CREATE);
-                            String error = "IndexGenerator.index - Metacat Index couldn't generate the index for the id - "+metacatId+" because "+e.getMessage();
-                            event.setDescription(error);
-                            try {
-                                EventlogFactory.createIndexEventLog().write(event);
-                            } catch (Exception ee) {
-                                log.error("SolrIndex.insertToIndex - IndexEventLog can't log the index inserting event :"+ee.getMessage());
-                            }
-                            log.error(error);
-                        }
-                        
-                   
+                     generateIndex(metacatId);
                 }
             }
         }
@@ -389,7 +350,7 @@ public class IndexGenerator extends TimerTask {
     /*
      * Index those ids which failed in the process (We got them from the EventLog)
      */
-    private void indexFailedIds(List<IndexEvent> events) {
+    /*private void indexFailedIds(List<IndexEvent> events) {
         if(events != null) {
             for(IndexEvent event : events) {
                 if(event != null) {
@@ -398,38 +359,23 @@ public class IndexGenerator extends TimerTask {
                         String id = identifier.getValue();
                         if(id != null) {
                             Event action = event.getAction();
-                            if (action != null && action.equals(Event.CREATE)) {
+                            //if (action != null && action.equals(Event.CREATE)) {
                                 try {
                                     generateIndex(id);
                                     EventlogFactory.createIndexEventLog().remove(identifier);
                                 } catch (Exception e) {
                                     log.error("IndexGenerator.indexFailedIds - Metacat Index couldn't generate the index for the id - "+id+" because "+e.getMessage());
                                 }
-                            } else if (action != null && action.equals(Event.DELETE)) {
-                                try {
-                                    removeIndex(id);
-                                    EventlogFactory.createIndexEventLog().remove(identifier);
-                                } catch (Exception e) {
-                                    log.error("IndexGenerator.indexFailedIds - Metacat Index couldn't remove the index for the id - "+id+" because "+e.getMessage());
-                                }
-                            }
+                            
                         }
                     }
                 }
             }
         }
-    }
+    }*/
     
     public void run() {
-        /*IndexEvent event = new IndexEvent();
-        event.setDate(Calendar.getInstance().getTime());
-        event.setType(IndexEvent.STARTTIMEDINDEX);
-        event.setDescription("Start the timed index job");
-        try {
-            EventlogFactory.createIndexEventLog().write(event);
-        } catch (Exception e) {
-            log.error("IndexGenerator.run - IndexEventLog can't log the timed indexing start event :"+e.getMessage());
-        }*/
+    
         try {
             Date since = EventlogFactory.createIndexEventLog().getLastProcessDate();
             index(since);
@@ -458,15 +404,7 @@ public class IndexGenerator extends TimerTask {
             log.error("IndexGenerator.run - Metadata-Index couldn't generate indexes for those documents which haven't been indexed : "+e.getMessage());
         } catch (FileNotFoundException e) {
             log.error("IndexGenerator.run - Metadata-Index couldn't generate indexes for those documents which haven't been indexed : "+e.getMessage());
-        }
-        /*event.setDate(Calendar.getInstance().getTime());
-        event.setType(IndexEvent.FINISHTIMEDINDEX);
-        event.setDescription("Finish the timed index job");
-        try {
-            EventlogFactory.createIndexEventLog().write(event);
-        } catch (Exception e) {
-            log.error("IndexGenerator.run - IndexEventLog can't log the timed indexing finish event :"+e.getMessage());
-        }*/ catch (ClassNotFoundException e) {
+        } catch (ClassNotFoundException e) {
             // TODO Auto-generated catch block
             log.error("IndexGenerator.run - Metadata-Index couldn't generate indexes for those documents which haven't been indexed : "+e.getMessage());
         } catch (InstantiationException e) {
@@ -502,14 +440,7 @@ public class IndexGenerator extends TimerTask {
         }
     }
     
-    /*
-     * Get the indexed ids list from the solr server.
-     * An empty list will be returned if there is no ids.
-     */
-    private List<String> getSolrDocIds() throws SolrServerException {
-        List<String> ids = solrIndex.getSolrIds();
-        return ids;
-    }
+   
     
     /*
      * Get an array of the list of ids of the metacat which has the systemmetadata modification in the range.
@@ -523,14 +454,14 @@ public class IndexGenerator extends TimerTask {
                         InvalidToken, NotAuthorized, NotImplemented, ServiceFailure, FileNotFoundException {
         String fileName = "ids-from-hazelcast";
         List<String> resourceMapIds = new ArrayList();
-        List<String> resourceMapDeletedIds = new ArrayList();
+        //List<String> resourceMapDeletedIds = new ArrayList();
         List<String> otherIds = new ArrayList();
-        List<String> otherDeletedIds = new ArrayList();
-        List[] ids = new List[4];
+        //List<String> otherDeletedIds = new ArrayList();
+        List[] ids = new List[2];
         ids[FIRST]= otherIds;
         ids[SECOND] = resourceMapIds;
-        ids[THIRD]  = otherDeletedIds;
-        ids[FOURTH] = resourceMapDeletedIds;
+        //ids[THIRD]  = otherDeletedIds;
+        //ids[FOURTH] = resourceMapDeletedIds;
         ISet<Identifier> metacatIds = DistributedMapsFactory.getIdentifiersSet();
         Date otherPreviousDate = null;
         Date otherDeletedPreviousDate = null;
@@ -566,7 +497,7 @@ public class IndexGenerator extends TimerTask {
                         }
                         if(correctTimeRange && formatId != null && formatId.getValue() != null && resourceMapNamespaces != null && isResourceMap(formatId)) {
                             //for the resource map
-                            if(sysmeta.getArchived() || sysmeta.getObsoletedBy() != null) {
+                            /*if(sysmeta.getArchived() || sysmeta.getObsoletedBy() != null) {
                                 //archived ids
                                 if(!resourceMapDeletedIds.isEmpty()) {
                                     if(sysDate.getTime() > resourceMapDeletedPreviousDate.getTime()) {
@@ -580,8 +511,8 @@ public class IndexGenerator extends TimerTask {
                                     resourceMapDeletedIds.add(identifier.getValue());
                                     resourceMapDeletedPreviousDate = sysDate;//init resourcemapPreviousDate
                                 }
-                            } else {
-                                // current ids
+                            } else {*/
+                                // for all ids
                                 if(!resourceMapIds.isEmpty()) {
                                     if(sysDate.getTime() > resourceMapPreviousDate.getTime()) {
                                         resourceMapIds.add(identifier.getValue());//append to the end of the list if current is later than the previous one
@@ -594,9 +525,9 @@ public class IndexGenerator extends TimerTask {
                                     resourceMapIds.add(identifier.getValue());
                                     resourceMapPreviousDate = sysDate;//init resourcemapPreviousDate
                                 }
-                            }
+                            //}
                         } else if (correctTimeRange) {
-                            if(sysmeta.getArchived() || sysmeta.getObsoletedBy() != null) {
+                            /*if(sysmeta.getArchived() || sysmeta.getObsoletedBy() != null) {
                                 //for the archived ids
                                 if(!otherDeletedIds.isEmpty()) {
                                     if(sysDate.getTime() > otherDeletedPreviousDate.getTime()) {
@@ -610,8 +541,8 @@ public class IndexGenerator extends TimerTask {
                                     otherDeletedIds.add(identifier.getValue());
                                     otherDeletedPreviousDate = sysDate;//init otherDeletedPreviousDate
                                 }
-                            } else {
-                                //for the current ids
+                            } else {*/
+                                //for all ids
                                 if(!otherIds.isEmpty()) {
                                     if(sysDate.getTime() > otherPreviousDate.getTime()) {
                                         otherIds.add(identifier.getValue());
@@ -624,7 +555,7 @@ public class IndexGenerator extends TimerTask {
                                     otherIds.add(identifier.getValue());
                                     otherPreviousDate = sysDate;//init otherPreviousDate
                                 }
-                            }
+                            //}
                         }
                         
                     }
@@ -655,29 +586,19 @@ public class IndexGenerator extends TimerTask {
     /*
      * Generate index for the id.
      */
-    private void generateIndex(String id) throws Exception {
-        if(id != null)  {
-                SystemMetadata sysmeta = getSystemMetadata(id);
-                //only update none-archived id.
-                if(sysmeta != null && !sysmeta.getArchived() && sysmeta.getObsoletedBy() == null) {
-                        InputStream data = getDataObject(id);
-                        Identifier obsolete = sysmeta.getObsoletes();
-                        List<String> obsoleteChain = null;
-                        if(obsolete != null) {
-                            obsoleteChain = getObsoletes(id);
-                        } 
-                        solrIndex.update(id, obsoleteChain, sysmeta, data);
-                } else {
-                    throw new Exception("IndexGenerator.generate - there is no found SystemMetadata associated with the id "+id);
-                }
-           
-        }
+    private void generateIndex(String id)  {
+        //if id is null and sysmeta will be null. If sysmeta is null, it will be caught in solrIndex.update
+        SystemMetadata sysmeta = getSystemMetadata(id);
+        Identifier pid = new Identifier();
+        pid.setValue(id);
+        solrIndex.update(pid, sysmeta);
+ 
     }
     
     /*
      * Remove the solr index for the list of ids
      */
-    private void removeIndex(List<String> ids) {
+    /*private void removeIndex(List<String> ids) {
         if(ids!= null) {
             for(String id :ids) {
                 try {
@@ -701,16 +622,16 @@ public class IndexGenerator extends TimerTask {
                 
             }
         }
-    }
+    }*/
     
     /*
      * Remove the index for the id
      */
-    private void removeIndex(String id) throws ServiceFailure, XPathExpressionException, NotImplemented, NotFound, UnsupportedType, IOException, SolrServerException, SAXException, ParserConfigurationException, OREParserException  {
+    /*private void removeIndex(String id) throws ServiceFailure, XPathExpressionException, NotImplemented, NotFound, UnsupportedType, IOException, SolrServerException, SAXException, ParserConfigurationException, OREParserException  {
         if(id != null) {
-            solrIndex.remove(id);
+            //solrIndex.remove(id);
         }
-    }
+    }*/
     
     /*
      * Initialize the system metadata map
@@ -719,28 +640,6 @@ public class IndexGenerator extends TimerTask {
         int times = 0;
         if(systemMetadataMap == null) {
             systemMetadataMap = DistributedMapsFactory.getSystemMetadataMap();
-            /*while(true) {
-                try {
-                    systemMetadataMap = DistributedMapsFactory.getSystemMetadataMap();
-                    break;
-                } catch (FileNotFoundException e) {
-                    throw e;
-                } catch (ServiceFailure e) {
-                    if(times <= maxAttempts) {
-                        log.warn("IndexGenerator.initSystemMetadataMap - the hazelcast service is not ready : "
-                                         +e.getMessage()+"\nWe will try to access it "+waitingTime/1000+" seconds later ");
-                        try {
-                            Thread.sleep(waitingTime);
-                        } catch (Exception ee) {
-                            log.warn("IndexGenerator.initSystemMetadataMap - the thread can't sleep for "+waitingTime/1000+" seconds to wait the hazelcast service");
-                        }
-                       
-                    } else {
-                        throw new ServiceFailure("0000", "IndexGenerator.initSystemMetadataMap - the hazelcast service is not ready even though Metacat-index wailted for "+maxAttempts*waitingTime/1000+" seconds. We can't get the system metadata from it and the building index can't happen this time");
-                    }
-                }
-                times++;
-            }*/
         }
     }
     
@@ -750,6 +649,17 @@ public class IndexGenerator extends TimerTask {
     private void initObjectPathMap() throws FileNotFoundException, ServiceFailure {
         if(objectPathMap == null) {
             objectPathMap = DistributedMapsFactory.getObjectPathMap();
+        }
+    }
+    
+    
+    
+    /*
+     * Initialize the index queue
+     */
+    private void initIndexQueue() throws FileNotFoundException, ServiceFailure {
+        if(indexQueue == null) {
+            indexQueue = DistributedMapsFactory.getIndexQueue();
         }
     }
     /**
