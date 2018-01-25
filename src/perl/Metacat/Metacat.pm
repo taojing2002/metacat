@@ -104,15 +104,30 @@ sub sendData {
 
   # determine encoding type
   my $contentType = 'application/x-www-form-urlencoded';
-  if ($postData{'enctype'}) {
+  my $expect = "100-continue";
+	if ($postData{'enctype'}) {
       $contentType = $postData{'enctype'};
       delete $postData{'enctype'};
   }
-
-  my $request = POST("$self->{'metacatUrl'}",
-                     Content_Type => $contentType,
-                     Content => \%postData
-                );
+  
+  
+  my $request;
+  if ( $self->{'auth_token_header'} ) {
+      # if available, set the Authorization header from the auth_token_header instance variable
+      $request = POST("$self->{'metacatUrl'}",
+                      Content_Type => $contentType,
+                      Expect => $expect,
+                      Authorization => $self->{'auth_token_header'},
+                      Content => \%postData
+                      );
+      
+  } else {
+      $request = POST("$self->{'metacatUrl'}",
+                      Content_Type => $contentType,
+                      Expect => $expect,
+                      Content => \%postData
+                      );      
+  }
 
   # set cookies on UA object
   my $cookie_jar = $self->{'cookies'};
@@ -197,13 +212,13 @@ sub logout {
 }
 
 #############################################################
-# subroutine to log into Metacat and get usr info xml for
-# a logged in user
+# subroutine to log into Metacat and get user and group 
+# information xml for a logged in user
 #############################################################
 sub getUserInfo {
 	my $self = shift;
 
-	my %postData = (action => 'getloggedinuserinfo');
+	my %postData = (action => 'validatesession');
   
 	my $response = $self->sendData(%postData);
 
@@ -288,7 +303,7 @@ sub upload {
   my %postData = ( action => 'upload',
                    docid => $docid,
                    datafile => [$datafile, $filename],
-                   enctype => 'form-data'
+                   enctype => 'multipart/form-data'
                  );
 
   my $response = $self->sendData(%postData);
@@ -354,6 +369,27 @@ sub setaccess {
   return $returnval;
 }
 
+#############################################################
+# subroutine to get access info from Metacat
+# returns access XML block from Metacat
+#############################################################
+sub getaccess {
+    my $self = shift;
+    my $docid = shift;
+    
+    my %postData = ( action => 'getaccesscontrol',
+    docid => $docid
+    );
+    
+    my $response = $self->sendData(%postData);
+    
+    my $returnval = 0;
+    if ($response) {
+        $returnval = $response;
+    }
+    
+    return $returnval;
+}
 
 #############################################################
 # subroutine to read an XML document from Metacat

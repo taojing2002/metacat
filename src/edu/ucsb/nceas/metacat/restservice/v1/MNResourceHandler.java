@@ -85,6 +85,7 @@ import edu.ucsb.nceas.metacat.restservice.D1ResourceHandler;
 import edu.ucsb.nceas.metacat.util.DeleteOnCloseFileInputStream;
 import edu.ucsb.nceas.utilities.PropertyNotFoundException;
 import edu.ucsb.nceas.metacat.MetaCatServlet;
+import edu.ucsb.nceas.metacat.ReadOnlyChecker;
 
 
 /**
@@ -642,6 +643,11 @@ public class MNResourceHandler extends D1ResourceHandler {
         throws NotImplemented, ServiceFailure, NotAuthorized, InvalidRequest, 
         InvalidToken {
 
+        ReadOnlyChecker checker = new ReadOnlyChecker();
+        boolean isReadOnlyMode = checker.isReadOnly();
+        if(isReadOnlyMode) {
+            throw new ServiceFailure("1333", ReadOnlyChecker.DATAONEERROR);
+        }
         long serialVersion = 0L;
         String serialVersionStr = null;
         Date dateSysMetaLastModified = null;
@@ -854,6 +860,11 @@ public class MNResourceHandler extends D1ResourceHandler {
         UnsupportedType, InstantiationException, IllegalAccessException, InvalidToken {
 
         logMetacat.debug("in POST replicate()");
+        ReadOnlyChecker checker = new ReadOnlyChecker();
+        boolean isReadOnlyMode = checker.isReadOnly();
+        if(isReadOnlyMode) {
+            throw new ServiceFailure("2151", ReadOnlyChecker.DATAONEERROR);
+        }
         
         // somewhat unorthodox, but the call is asynchronous and we'd like to return this info sooner
         boolean allowed = false;
@@ -1106,7 +1117,7 @@ public class MNResourceHandler extends D1ResourceHandler {
             String extension = ObjectFormatInfo.instance().getExtension(sm.getFormatId().getValue());
             String filename = id.getValue();
             if (extension != null) {
-            	filename = id.getValue() + extension;
+            	filename = id.getValue() + "." + extension;
             }
             response.setContentType(mimeType);
             response.setHeader("Content-Disposition", "inline; filename=" + filename);

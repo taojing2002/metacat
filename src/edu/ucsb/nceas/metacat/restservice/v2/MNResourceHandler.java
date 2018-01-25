@@ -87,6 +87,7 @@ import org.jibx.runtime.JiBXException;
 import org.xml.sax.SAXException;
 
 import edu.ucsb.nceas.metacat.MetaCatServlet;
+import edu.ucsb.nceas.metacat.ReadOnlyChecker;
 import edu.ucsb.nceas.metacat.common.query.stream.ContentTypeInputStream;
 import edu.ucsb.nceas.metacat.dataone.MNodeService;
 import edu.ucsb.nceas.metacat.properties.PropertyService;
@@ -669,7 +670,13 @@ public class MNResourceHandler extends D1ResourceHandler {
     private void systemMetadataChanged() 
         throws NotImplemented, ServiceFailure, NotAuthorized, InvalidRequest, 
         InvalidToken {
-
+        
+        ReadOnlyChecker checker = new ReadOnlyChecker();
+        boolean isReadOnlyMode = checker.isReadOnly();
+        if(isReadOnlyMode) {
+            throw new ServiceFailure("1333", ReadOnlyChecker.DATAONEERROR);
+        }
+        
         //final long serialVersion = 0L;
         String serialVersionStr = null;
         String dateSysMetaLastModifiedStr = null;
@@ -966,6 +973,11 @@ public class MNResourceHandler extends D1ResourceHandler {
         UnsupportedType, InstantiationException, IllegalAccessException, InvalidToken {
 
         logMetacat.debug("in POST replicate()");
+        ReadOnlyChecker checker = new ReadOnlyChecker();
+        boolean isReadOnlyMode = checker.isReadOnly();
+        if(isReadOnlyMode) {
+            throw new ServiceFailure("2151", ReadOnlyChecker.DATAONEERROR);
+        }
         
         // somewhat unorthodox, but the call is asynchronous and we'd like to return this info sooner
         boolean allowed = false;
@@ -1262,7 +1274,7 @@ public class MNResourceHandler extends D1ResourceHandler {
 	            }
 	            filename = id.getValue();
 	            if (extension != null) {
-	            	filename = id.getValue() + extension;
+	            	filename = id.getValue() + "." + extension;
 	            }
             }
             response.setContentType(mimeType);

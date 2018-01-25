@@ -40,6 +40,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.Hashtable;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.Timer;
@@ -1263,10 +1264,10 @@ public abstract class D1NodeService {
       }
       
        
-    } catch (ServiceFailure e) {
+    /*} catch (ServiceFailure e) {
       logMetacat.debug("There was a problem determining if the object identified by" + 
           sysmeta.getIdentifier().getValue() + 
-          " is science metadata: " + e.getMessage());
+          " is science metadata: " + e.getMessage());*/
     
     } catch (NotFound e) {
       logMetacat.debug("There was a problem determining if the object identified by" + 
@@ -1363,14 +1364,15 @@ public abstract class D1NodeService {
     String[] groupnames = null;
     if (session != null ) {
     	username = session.getSubject().getValue();
-    	if (session.getSubjectInfo() != null) {
-    		List<Group> groupList = session.getSubjectInfo().getGroupList();
-    		if (groupList != null) {
-    			groupnames = new String[groupList.size()];
-    			for (int i = 0; i < groupList.size(); i++ ) {
-    				groupnames[i] = groupList.get(i).getGroupName();
-    			}
-    		}
+    	Set<Subject> otherSubjects = AuthUtils.authorizedClientSubjects(session);
+    	if (otherSubjects != null) {    		
+			groupnames = new String[otherSubjects.size()];
+			int i = 0;
+			Iterator<Subject> iter = otherSubjects.iterator();
+			while (iter.hasNext()) {
+				groupnames[i] = iter.next().getValue();
+				i++;
+			}
     	}
     }
     
@@ -1410,7 +1412,7 @@ public abstract class D1NodeService {
     		if (groupList != null) {
     			groupnames = new String[groupList.size()];
     			for (int i = 0; i < groupList.size(); i++ ) {
-    				groupnames[i] = groupList.get(i).getGroupName();
+    				groupnames[i] = groupList.get(i).getSubject().getValue();
     			}
     		}
     	}

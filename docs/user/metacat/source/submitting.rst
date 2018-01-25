@@ -82,9 +82,9 @@ To install and run the Registry:
       sudo cpan -i Scalar::Util
       sudo cpan -i Captcha:reCAPTCHA
       sudo cpan -i DateTime
-      
-
-
+      sudo cpan -i Crypt::JWT
+      sudo cpan -i Crypt::X509
+          
 .. sidebar:: Instructions for Red Hat (Alternate Step 2)
 
   * Install the libraries
@@ -133,7 +133,8 @@ To install and run the Registry:
       install MSERGEANT/XML-LibXSLT-1.58.tar.gz
       install Captcha:reCAPTCHA
       install DateTime
-      
+      install Crypt::JWT
+      install Crypt::X509
 
 
 2. Double-check that Metacat's temporary folder, application.tempDir, is 

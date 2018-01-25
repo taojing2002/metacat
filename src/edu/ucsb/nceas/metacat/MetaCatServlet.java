@@ -52,6 +52,7 @@ import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 
+
 import edu.ucsb.nceas.metacat.common.query.EnabledQueryEngines;
 import edu.ucsb.nceas.metacat.database.DBConnection;
 import edu.ucsb.nceas.metacat.database.DBConnectionPool;
@@ -714,6 +715,9 @@ public class MetaCatServlet extends HttpServlet {
 			String ctype = request.getContentType();
 			
 			if (ctype != null && ctype.startsWith("multipart/form-data")) {
+			    if(isReadOnly(response)) {
+			        return;
+			    }
 				handler.handleMultipartForm(request, response);
 				return;
 			} 
@@ -835,40 +839,67 @@ public class MetaCatServlet extends HttpServlet {
 
 				// handle session validate request
 			} else if (action.equals("validatesession")) {
-				Writer out = new OutputStreamWriter(response.getOutputStream(), DEFAULT_ENCODING);
-				String idToValidate = null;
-				String idsToValidate[] = params.get("sessionid");
-				if (idsToValidate != null) {
-					idToValidate = idsToValidate[0];
-				} else {
-					// use the sessionid from the cookie
+				String token = request.getHeader("Authorization");
+				
+				// First check for a valid authentication token
+				if ( token != null && ! token.equals("") ) {
+					Writer out = new OutputStreamWriter(response.getOutputStream(), DEFAULT_ENCODING);
 					SessionData sessionData = RequestUtil.getSessionData(request);
-					if (sessionData != null) {
-						idToValidate = sessionData.getId();
+					
+					response.setContentType("text/xml");
+					out.write("<?xml version=\"1.0\"?>");
+					out.write("<validateSession><status>");
+					
+					if ( sessionData != null ) {
+						out.write("valid");
+						
+					} else {
+						out.write("invalid");
+						
 					}
-				}
-				SessionService.getInstance().validateSession(out, response, idToValidate);
-				out.close();
+					out.write("</status>");
+				    
+					if (sessionData != null) {
+						out.write("<userInformation>");
+						out.write("<name>");
+						out.write(sessionData.getUserName());
+						out.write("</name>");
+						out.write("<fullName>");
+						out.write(sessionData.getName());
+						out.write("</fullName>");
+						String[] groups = sessionData.getGroupNames();
+						if ( groups != null ) {
+							for(String groupName : groups) {
+							  out.write("<group>");
+							  out.write(groupName);
+							  out.write("</group>");
+							}
+						}
+						out.write("</userInformation>");
+					}
 
-				// handle shrink DBConnection request
-			} else if (action.equals("shrink")) {
-				PrintWriter out = response.getWriter();
-				boolean success = false;
-				// If all DBConnection in the pool are free and DBConnection
-				// pool
-				// size is greater than initial value, shrink the connection
-				// pool
-				// size to initial value
-				success = DBConnectionPool.shrinkConnectionPoolSize();
-				if (success) {
-					// if successfully shrink the pool size to initial value
-					out.println("DBConnection Pool shrunk successfully.");
-				}// if
-				else {
-					out.println("DBConnection pool not shrunk successfully.");
+					out.write("<sessionId>" + sessionId + "</sessionId></validateSession>");				
+					out.close();
+					
+				} else {
+					// With no token, validate the sessionid
+					Writer out = new OutputStreamWriter(response.getOutputStream(), DEFAULT_ENCODING);
+					String idToValidate = null;
+					String idsToValidate[] = params.get("sessionid");
+					if (idsToValidate != null) {
+						idToValidate = idsToValidate[0];
+						
+					} else {
+						// use the sessionid from the cookie
+						SessionData sessionData = RequestUtil.getSessionData(request);
+						if (sessionData != null) {
+							idToValidate = sessionData.getId();
+							
+						}
+					}
+					SessionService.getInstance().validateSession(out, response, idToValidate);
+					out.close();
 				}
-				// close out put
-				out.close();
 
 				// aware of session expiration on every request
 			} else {
@@ -883,6 +914,7 @@ public class MetaCatServlet extends HttpServlet {
 
 				logMetacat.info("MetaCatServlet.handleGetOrPost - The user is : " + userName);
 			}
+			
 			// Now that we know the session is valid, we can delegate the
 			// request to a particular action handler
 			if (action.equals("query")) {
@@ -928,6 +960,9 @@ public class MetaCatServlet extends HttpServlet {
 				handler.handleReadInlineDataAction(params, request, response, userName, password,
 						groupNames);
 			} else if (action.equals("insert") || action.equals("update")) {
+			    if(isReadOnly(response)) {
+                    return;
+                }
 				PrintWriter out = response.getWriter();
 				if ((userName != null) && !userName.equals("public")) {
 					handler.handleInsertOrUpdateAction(request.getRemoteAddr(), request.getHeader("User-Agent"), response, out, params, userName,
@@ -942,6 +977,9 @@ public class MetaCatServlet extends HttpServlet {
 				}
 				out.close();
 			} else if (action.equals("delete")) {
+			    if(isReadOnly(response)) {
+                    return;
+                }
 				PrintWriter out = response.getWriter();
 				if ((userName != null) && !userName.equals("public")) {
 					handler.handleDeleteAction(out, params, request, response, userName,
@@ -960,6 +998,9 @@ public class MetaCatServlet extends HttpServlet {
 				handler.handleValidateAction(out, params);
 				out.close();
 			} else if (action.equals("setaccess")) {
+			    if(isReadOnly(response)) {
+                    return;
+                }
 				PrintWriter out = response.getWriter();
 				handler.handleSetAccessAction(out, params, userName, request, response);
 				out.close();
@@ -1030,10 +1071,19 @@ public class MetaCatServlet extends HttpServlet {
 				out.println("\n</user>\n");
 				out.close();
 			} else if (action.equals("buildindex")) {
+			    if(isReadOnly(response)) {
+                    return;
+                }
 				handler.handleBuildIndexAction(params, request, response, userName, groupNames);
 			} else if (action.equals("reindex")) {
+			    if(isReadOnly(response)) {
+                    return;
+                }
 				handler.handleReindexAction(params, request, response, userName, groupNames);
 			} else if (action.equals("reindexall")) {
+			    if(isReadOnly(response)) {
+                    return;
+                }
                 handler.handleReindexAllAction(params, request, response, userName, groupNames);
             } else if (action.equals("login") || action.equals("logout")) {
 				/*
@@ -1072,6 +1122,9 @@ public class MetaCatServlet extends HttpServlet {
 				ServiceService.refreshService("XMLSchemaService");
 				return;
 			} else if (action.equals("scheduleWorkflow")) {
+			    if(isReadOnly(response)) {
+                    return;
+                }
 				try {
 					WorkflowSchedulerClient.getInstance().scheduleJob(request, response,
 							params, userName, groupNames);
@@ -1082,6 +1135,9 @@ public class MetaCatServlet extends HttpServlet {
 					return;
 				}
 			} else if (action.equals("unscheduleWorkflow")) {
+			    if(isReadOnly(response)) {
+                    return;
+                }
 				try {
 					WorkflowSchedulerClient.getInstance().unScheduleJob(request,
 							response, params, userName, groupNames);
@@ -1092,6 +1148,9 @@ public class MetaCatServlet extends HttpServlet {
 					return;
 				}
 			} else if (action.equals("rescheduleWorkflow")) {
+			    if(isReadOnly(response)) {
+                    return;
+                }
 				try {
 					WorkflowSchedulerClient.getInstance().reScheduleJob(request,
 							response, params, userName, groupNames);
@@ -1112,6 +1171,9 @@ public class MetaCatServlet extends HttpServlet {
 					return;
 				}
 			} else if (action.equals("deleteScheduledWorkflow")) {
+			    if(isReadOnly(response)) {
+                    return;
+                }
 				try {
 					WorkflowSchedulerClient.getInstance().deleteJob(request, response,
 							params, userName, groupNames);
@@ -1121,11 +1183,37 @@ public class MetaCatServlet extends HttpServlet {
 							ResponseUtil.DELETE_SCHEDULED_WORKFLOW_ERROR, be);
 					return;
 				}
-
+			} else if (action.equals("shrink")) {
+			     // handle shrink DBConnection request
+                PrintWriter out = response.getWriter();
+                if(!AuthUtil.isAdministrator(userName, groupNames)){
+                    out.println("The user "+userName+ " is not the administrator of the Metacat and doesn't have the permission to call the method.");
+                    out.close();
+                    return;
+                }
+                boolean success = false;
+                // If all DBConnection in the pool are free and DBConnection
+                // pool
+                // size is greater than initial value, shrink the connection
+                // pool
+                // size to initial value
+                success = DBConnectionPool.shrinkConnectionPoolSize();
+                if (success) {
+                    // if successfully shrink the pool size to initial value
+                    out.println("DBConnection Pool shrunk successfully.");
+                }// if
+                else {
+                    out.println("DBConnection pool did not shrink successfully.");
+                }
+                // close out put
+                out.close();
 			} else {
 				//try the plugin handler if it has an entry for handling this action
 				MetacatHandlerPlugin handlerPlugin = MetacatHandlerPluginManager.getInstance().getHandler(action);
 				if (handlerPlugin != null) {
+				    if(isReadOnly(response)) {
+	                    return;
+	                }
 					handlerPlugin.handleAction(action, params, request, response, userName, groupNames, sessionId);
 				} 
 				else {
@@ -1176,5 +1264,21 @@ public class MetaCatServlet extends HttpServlet {
      */
     public static boolean isFullyInitialized() {
     	return _fullyInitialized;
+    }
+    
+    public static boolean isReadOnly(HttpServletResponse response) throws IOException {
+        boolean readOnly = false;
+        ReadOnlyChecker checker = new ReadOnlyChecker();
+        readOnly = checker.isReadOnly();
+        if(readOnly) {
+            PrintWriter out = response.getWriter();
+            response.setContentType("text/xml");
+            out.println("<?xml version=\"1.0\"?>");
+            out.println("<error>");
+            out.println("The Metacat is on the read-only mode and your request can't be fulfiled. Please try again later.");
+            out.println("</error>");
+            out.close();
+        }
+        return readOnly;
     }
 }

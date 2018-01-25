@@ -422,7 +422,7 @@ public class IdentifierManager {
 		
 		List<NodeReference> nodes = new ArrayList<NodeReference>();
 		String sql = "select guid, policy, member_node " +
-			"from smReplicationPolicy where guid = ? and policy = ?";
+			"from smReplicationPolicy where guid = ? and policy = ? order by policy_id ASC";
 	    DBConnection dbConn = null;
 	    int serialNumber = -1;
 	    try {
@@ -1655,7 +1655,8 @@ public class IdentifierManager {
     		return AccessControlInterface.WRITE;
     	}
     	if (permission.equals(Permission.CHANGE_PERMISSION)) {
-    		return AccessControlInterface.CHMOD;
+    		// implies all permission, rather than just CHMOD
+    		return AccessControlInterface.ALL;
     	}
 		return -1;
     }
