@@ -568,7 +568,7 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 
       // do we have a valid pid?
       if (pid == null || pid.getValue().trim().equals("")) {
-          throw new ServiceFailure("4972", "The provided identifier was invalid.");
+          throw new InvalidToken("4973", "The provided identifier was invalid.");
           
       }
 
@@ -586,10 +586,19 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 	      allowed = isAuthoritativeMNodeAdmin(session, pid);
 	  }
 	  
+	  //check if the session has the change permission
+	  if(!allowed) {
+	      try {
+	          allowed = userHasPermission(session, pid, Permission.CHANGE_PERMISSION);
+	      } catch (InvalidRequest e) {
+	          throw new InvalidToken("4973","CN.archive method couldn't determine if the client has the change permssion on this pid "+pid.getValue()+ " since "+e.getMessage());
+	      }
+	      
+	  }
 	  if (!allowed) {
 		  String msg = "The subject " + session.getSubject().getValue() + 
-				  " is not allowed to call archive() on a Coordinating Node.";
-		  logMetacat.info(msg);
+				  " doesn't have the change permission to archive the object "+pid.getValue();
+		  logMetacat.warn(msg);
 		  throw new NotAuthorized("4970", msg);
 	  }
 	  
@@ -1811,6 +1820,7 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
       if (!isValidIdentifier(pid)) {
           throw new InvalidRequest("4891", "The provided identifier is invalid.");
       }
+      logMetacat.debug("CN.create -start to create the object with pid "+pid.getValue());
       // The lock to be used for this identifier
       Lock lock = null;
 
@@ -1837,7 +1847,7 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
                   }
               }
               // create the coordinating node version of the document      
-              logMetacat.debug("Locked identifier " + pid.getValue());
+              logMetacat.debug("CN.create - after locking identifier, passing authorization check, continue to create the object " + pid.getValue());
               sysmeta.setSerialVersion(BigInteger.ONE);
               //for the object whose authoritative mn is v1. we need reset the modification date.
               //for the object whose authoritative mn is v2. we just accept the modification date.
@@ -1862,8 +1872,8 @@ public class CNodeService extends D1NodeService implements CNAuthorization,
 
           } else {
               String msg = "The subject listed as " + session.getSubject().getValue() + 
-                  " isn't allowed to call create() on a Coordinating Node.";
-              logMetacat.info(msg);
+                  " isn't allowed to call create() on a Coordinating Node for pid "+pid.getValue();
+              logMetacat.error(msg);
               throw new NotAuthorized("1100", msg);
           }
           

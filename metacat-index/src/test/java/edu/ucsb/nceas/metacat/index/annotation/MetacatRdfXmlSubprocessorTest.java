@@ -55,7 +55,6 @@ public class MetacatRdfXmlSubprocessorTest {
                 } else if (newId.equals("urn:uuid:9ceeaeb3-6ef3-4b1e-bc4d-96e299fab3a4")) {
                     SolrElementField field1 = resultSolrDoc.getField("prov_used");
                     //assertTrue(" the used value should be urn:uuid:621a115f-f1ed-4bef-bca5-f8741793a540. But the real value is "+field1.getValue(), field1.getValue().equals("urn:uuid:621a115f-f1ed-4bef-bca5-f8741793a540"));
-                   
                 } else if (newId.equals("urn:uuid:621a115f-f1ed-4bef-bca5-f8741793a540")) {
                     List<String>list = resultSolrDoc.getAllFieldValues("prov_wasDerivedFrom");
                     assertTrue("The list must contain urn:uuid:ee635a61-c930-444d-8214-db65178a1a47", list.contains("urn:uuid:ee635a61-c930-444d-8214-db65178a1a47"));
@@ -64,6 +63,8 @@ public class MetacatRdfXmlSubprocessorTest {
                     assertTrue("The list must contain urn:uuid:e534b2ab-3a1b-44ed-8a99-ce54a0487aea", list.contains("urn:uuid:e534b2ab-3a1b-44ed-8a99-ce54a0487aea"));
                     list = resultSolrDoc.getAllFieldValues("prov_generatedByExecution");
                     assertTrue("The list must contain urn:uuid:d8e46217-2650-42b2-896f-0f006b1a2d3b", list.contains("urn:uuid:d8e46217-2650-42b2-896f-0f006b1a2d3b"));
+                    list = resultSolrDoc.getAllFieldValues("prov_hasDerivations");
+                    assertTrue("The output must contain prov_hasDerivations urn:uuid:2c20432e-116a-4085-b8d6-abfc4b2dada2", list.contains("urn:uuid:2c20432e-116a-4085-b8d6-abfc4b2dada2"));
                 } else if (newId.equals("urn:uuid:a0e104da-c925-4765-af60-29310de1b99a")) {
                     List<String>list = resultSolrDoc.getAllFieldValues("prov_generatedByExecution");
                     assertTrue("The list must contain urn:uuid:9ceeaeb3-6ef3-4b1e-bc4d-96e299fab3a4", list.contains("urn:uuid:9ceeaeb3-6ef3-4b1e-bc4d-96e299fab3a4"));

@@ -39,6 +39,7 @@ import java.util.Vector;
 
 import org.apache.log4j.Logger;
 import org.dataone.client.v2.formats.ObjectFormatCache;
+import org.dataone.configuration.Settings;
 import org.dataone.service.exceptions.BaseException;
 import org.dataone.service.exceptions.InvalidSystemMetadata;
 import org.dataone.service.types.v1.AccessPolicy;
@@ -85,6 +86,8 @@ public class IdentifierManager {
     
     public static final String TYPE_SYSTEM_METADATA = "systemmetadata";
     public static final String TYPE_IDENTIFIER = "identifier";
+    
+    private static boolean filterWhiteSpaces = Settings.getConfiguration().getBoolean("dataone.listingidentifier.filteringwhitespaces", true);
   
     /**
      * The single instance of the manager that is always returned.
@@ -1868,6 +1871,7 @@ public class IdentifierManager {
             boolean f2 = false;
             boolean f3 = false;
             boolean f4 = false;
+            boolean f5 = false;
 
 
             if (startTime != null) {
@@ -1930,6 +1934,19 @@ public class IdentifierManager {
                     whereClauseSql += " and authoritive_member_node = '" +
                         nodeId.getValue().trim() + "'";
                 }
+                f5 = true;
+            }
+            
+          //add a filter to remove pids whith white spaces
+            if(filterWhiteSpaces) {
+                logMetacat.debug("IdnetifierManager.querySystemMetadata - the default value of the property \"dataone.listingidentifier.filteringwhitespaces\" is true, so we will filter the white spaces in the query");
+                if(!f1 && !f2 && !f3 && !f4 && !f5) {
+                    whereClauseSql += " where guid not like '% %' ";
+                } else {
+                    whereClauseSql += " and guid not like '% %' ";
+                }
+            } else {
+                logMetacat.debug("IdnetifierManager.querySystemMetadata - the property \"dataone.listingidentifier.filteringwhitespaces\" is configured to be false, so we don't filter the white spaces in the query.");
             }
            
             
@@ -2045,9 +2062,9 @@ public class IdentifierManager {
                 //do nothing
             }
 
-            logMetacat.debug("list objects fieldStmt: " + fieldStmt.toString());
+            logMetacat.info("list objects fieldStmt: " + fieldStmt.toString());
             
-            logMetacat.debug("list objects countStmt: " + countStmt.toString());
+            logMetacat.info("list objects countStmt: " + countStmt.toString());
             
             // get the total object count no matter what
             int total = 0;
@@ -2438,6 +2455,52 @@ public class IdentifierManager {
         } 
         logMetacat.debug("IdentifierManager.getObjectFilePath - the file path for the object with localId "+localId+" which is scienceMetacat "+isScienceMetadata+", is "+documentPath+". If the value is null, this means we can't find it.");
         return documentPath;   
+    }
+    
+    /**
+     * IF the given localId exists on the xml_revisions table
+     * @param localId
+     * @return
+     * @throws SQLException
+     */
+    public boolean existsInXmlLRevisionTable(String docid, int rev) throws SQLException{
+        boolean exist =false;
+        DBConnection conn = null;
+        int serialNumber = -1;
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
+        logMetacat.info("IdentifierManager.existsInXmlLRevisionTable - the docid is "+docid +" and rev is "+rev);
+        try {
+            //check out DBConnection
+            conn = DBConnectionPool.getDBConnection("IdentifierManager.existsInXmlLRevisionTable");
+            serialNumber = conn.getCheckOutSerialNumber();
+            // Check if the document exists in xml_revisions table.
+            //this only archives a document from xml_documents to xml_revisions (also archive the xml_nodes table as well)
+            logMetacat.debug("IdentifierManager.existsInXmlLRevisionTable - check if the document "+docid+"."+rev+ " exists in the xml_revision table");
+            pstmt = conn.prepareStatement("SELECT rev, docid FROM xml_revisions WHERE docid = ? AND rev = ?");
+            pstmt.setString(1, docid);
+            pstmt.setInt(2, rev);
+            logMetacat.debug("IdentifierManager.existsInXmlLRevisionTable - executing SQL: " + pstmt.toString());
+            pstmt.execute();
+            rs = pstmt.getResultSet();
+            if(rs.next()){
+                exist = true;
+            }
+            conn.increaseUsageCount(1);
+        } catch (Exception e) {
+            throw new SQLException(e.getMessage());
+        } finally {
+            // Return database connection to the pool
+            DBConnectionPool.returnDBConnection(conn, serialNumber);
+            if(rs != null) {
+                rs.close();
+            }
+            if(pstmt != null) {
+                pstmt.close();
+            }
+        }
+        logMetacat.info("IdentifierManager.existsInXmlLRevisionTable - Does the docid "+docid+"."+rev+ " exist in the xml_revision table? - "+exist);
+        return exist;
     }
 }
 
