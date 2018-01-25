@@ -457,12 +457,12 @@ public class ReplicationHandler extends TimerTask
         parserBase = DocumentImpl.EML210;
       }
       
-      String formatId = null;
+      /*String formatId = null;
       //get the format id from the system metadata 
       if(sysMeta != null && sysMeta.getFormatId() != null) {
           logMetacat.debug("ReplicationService.handleForceReplicateRequest - the format id will be got from the system metadata for the object "+accNumber);
           formatId = sysMeta.getFormatId().getValue();
-      }
+      }*/
       // Write the document into local host
       DocumentImplWrapper wrapper = new DocumentImplWrapper(parserBase, false, false);
       String newDocid = wrapper.writeReplication(dbConn,
@@ -476,7 +476,7 @@ public class ReplicationHandler extends TimerTask
                               docHomeServer,
                               remoteserver, tableName, true,// true is for time replication 
                               createdDate,
-                              updatedDate, formatId);
+                              updatedDate);
       
       if(sysMeta != null) {
 			// submit for indexing. When the doc writing process fails, the index process will fail as well. But this failure
@@ -1035,7 +1035,7 @@ public class ReplicationHandler extends TimerTask
             //logMetacat.debug("publicID: " + publicId.toString());
             logReplication.info
                               ("ReplicationHandler.updateCatalog - v.elementAt(3): " + (String)v.elementAt(3));
-           if(!publicId.contains(v.elementAt(3)))
+           /*if(!publicId.contains(v.elementAt(3)))
            { //so we don't have this public id in our local table so we need to
              //add it.
         	   
@@ -1072,7 +1072,7 @@ public class ReplicationHandler extends TimerTask
              pstmt.close();
              logReplication.info("ReplicationHandler.updateCatalog - Success fully to insert new publicid "+
                                (String)v.elementAt(3) + " from server"+server);
-           }
+           }*/
         }
         catch(Exception e)
         {

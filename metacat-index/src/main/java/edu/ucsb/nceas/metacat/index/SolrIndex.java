@@ -195,7 +195,7 @@ public class SolrIndex {
     private Map<String, SolrDoc> process(String id, SystemMetadata systemMetadata, String objectPath)
                     throws IOException, SAXException, ParserConfigurationException,
                     XPathExpressionException, JiBXException, EncoderException, SolrServerException, NotImplemented, NotFound, UnsupportedType{
-
+        log.debug("SolrIndex.process - trying to generate the solr doc object for the pid "+id);
         // Load the System Metadata document
         ByteArrayOutputStream systemMetadataOutputStream = new ByteArrayOutputStream();
         TypeMarshaller.marshalTypeToOutputStream(systemMetadata, systemMetadataOutputStream);
@@ -214,7 +214,7 @@ public class SolrIndex {
         
         // get the format id for this object
         String formatId = indexDocument.getFirstFieldValue(SolrElementField.FIELD_OBJECTFORMAT);
-
+        log.debug("SolrIndex.process - the object format id for the pid "+id+" is "+formatId);
         // Determine if subprocessors are available for this ID
         if (subprocessors != null) {
 	        // for each subprocessor loaded from the spring config
@@ -230,11 +230,12 @@ public class SolrIndex {
 	                    // referenced by the resource map.
 	                	FileInputStream dataStream = new FileInputStream(objectPath);
 	                    if (!dataStream.getFD().valid()) {
-	                    	log.error("Could not load OBJECT file for ID,Path=" + id + ", "
+	                    	log.error("SolrIndex.process - subprocessor "+ subprocessor.getClass().getName() +" couldn't process since it could not load OBJECT file for ID,Path=" + id + ", "
                                     + objectPath);
 	                        //throw new Exception("Could not load OBJECT for ID " + id );
 	                    } else {
 	                        docs = subprocessor.processDocument(id, docs, dataStream);
+	                        log.debug("SolrIndex.process - subprocessor "+ subprocessor.getClass().getName() +" generated solr doc for id "+id);
 	                    }
 	                } catch (Exception e) {
 	                    e.printStackTrace();
@@ -383,6 +384,7 @@ public class SolrIndex {
                     throws IOException, SAXException, ParserConfigurationException,
                     XPathExpressionException, SolrServerException, JiBXException, EncoderException, NotImplemented, NotFound, UnsupportedType {
         checkParams(pid, systemMetadata, objectPath);
+        log.debug("SolrIndex.insert - trying to insert the solrDoc for object "+pid.getValue());
         Map<String, SolrDoc> docs = process(pid.getValue(), systemMetadata, objectPath);
         
         //transform the Map to the SolrInputDocument which can be used by the solr server
@@ -392,9 +394,13 @@ public class SolrIndex {
                 if(id != null) {
                     SolrDoc doc = docs.get(id);
                     insertToIndex(doc);
+                    log.debug("SolrIndex.insert - inserted the solr-doc object of pid "+id+", which relates to object "+pid.getValue()+", into the solr server.");
                 }
                 
             }
+            log.debug("SolrIndex.insert - finished to insert the solrDoc for object "+pid.getValue());
+        } else {
+            log.debug("SolrIndex.insert - the genered solrDoc is null. So we will not index the object "+pid.getValue());
         }
     }
     
@@ -481,7 +487,7 @@ public class SolrIndex {
                     if(field != null) {
                         String value = field.getValue();
                         String name = field.getName();
-                        //System.out.println("add name/value pair - "+name+"/"+value);
+                        log.trace("SolrIndex.insertToIndex - add name/value pair - "+name+"/"+value);
                         solrDoc.addField(name, value);
                     }
                 }
@@ -539,6 +545,7 @@ public class SolrIndex {
             log.error("SolrIndex.update - the systemMetadata or pid is null. So nothing will be indexed.");
             return;
         }
+        log.debug("SolrIndex.update - trying to update(insert or remove) solr index of object "+pid.getValue());
         String objectPath = null;
         try {
             if (systemMetadata.getArchived() == null || !systemMetadata.getArchived()) {
@@ -586,12 +593,12 @@ public class SolrIndex {
         if(isArchive ) {
             //delete the index for the archived objects
             remove(pid.getValue(), systemMetadata);
-            log.info("SolrIndex.update============================= archive the idex for the identifier "+pid);
+            log.info("SolrIndex.update============================= archive the idex for the identifier "+pid.getValue());
         } else {
         	checkParams(pid, systemMetadata, data);
             //generate index for either add or update.
             insert(pid, systemMetadata, objectPath);
-            log.info("SolrIndex.update============================= insert index for the identifier "+pid);
+            log.info("SolrIndex.update============================= insert index for the identifier "+pid.getValue());
         }
     }
     
